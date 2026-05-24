@@ -9,7 +9,7 @@ st.set_page_config(page_title="TGA Lüftungsprognose", layout="wide")
 st.title("☀️ TGA Smart-Lüftungs-Vorhersager")
 
 # --- Geocoding API (Ort in Koordinaten umwandeln) ---
-@st.cache_data(ttl=86400) # 24 Stunden cachen, da sich Städte selten bewegen
+@st.cache_data(ttl=86400) # 24 Stunden cachen
 def get_coordinates_from_city(city_name):
     if not city_name:
         return 51.4400, 7.5700, "Schwerte (Standard)", True
@@ -36,10 +36,11 @@ def get_24h_forecast(lat, lon):
         temps = res["hourly"]["temperature_2m"][:24]
         rhs = res["hourly"]["relative_humidity_2m"][:24]
         
-        times = [datetime.strptime(t, "%Y-%m-%dT%H:%M").strftime("%H:00 Uhr") for t in times_raw]
+        # HIER KORRIGIERT: %M statt %O für die saubere Darstellung
+        times = [datetime.strptime(t, "%Y-%m-%dT%H:%M").strftime("%H:%M Uhr") for t in times_raw]
         return times, temps, rhs, True
     except Exception:
-        times = [f"{(datetime.now() + timedelta(hours=i)).strftime('%H:00')}" for i in range(24)]
+        times = [f"{(datetime.now() + timedelta(hours=i)).strftime('%H:%M Uhr')}" for i in range(24)]
         temps = [15.0 + 5.0 * np.sin(i/3) for i in range(24)]
         rhs = [70 + 15 * np.cos(i/3) for i in range(24)]
         return times, temps, rhs, False
@@ -48,13 +49,12 @@ def get_24h_forecast(lat, lon):
 def calc_x_and_h(theta, phi):
     p_sat = 610.78 * np.exp((17.08085 * theta) / (234.175 + theta))
     p_d = (phi / 100.0) * p_sat
-    x = 622.0 * p_d / (101325.0 - p_d) # g/kg trockene Luft
-    h = 1.005 * theta + (x / 1000.0) * (2501.0 + 1.86 * theta) # kJ/kg
+    x = 622.0 * p_d / (101325.0 - p_d) 
+    h = 1.005 * theta + (x / 1000.0) * (2501.0 + 1.86 * theta) 
     return x, h
 
 # --- EINSTELLUNGEN DIREKT AUF DER HAUPTSEITE ---
 with st.expander("⚙️ Sensoren & Standort einstellen", expanded=True):
-    # 1. Zeile: Ortseingabe
     city_input = st.text_input("📍 Ort eingeben (z.B. Stadtname)", value="Schwerte")
     lat, lon, gefundenes_ziel, geo_success = get_coordinates_from_city(city_input)
     if city_input:
@@ -62,7 +62,6 @@ with st.expander("⚙️ Sensoren & Standort einstellen", expanded=True):
     
     st.markdown("---")
     
-    # 2. Zeile: Innen- und Außensensoren
     col_in, col_out = st.columns(2)
     with col_in:
         st.markdown("**🏠 Innensensor**")
@@ -94,12 +93,10 @@ for t, f in zip(temps_out, rhs_out):
     x_aussen_vorlauf.append(x_o)
     h_aussen_vorlauf.append(h_o)
 
-# Wenn eigener Außensensor aktiv ist, überschreiben wir "Jetzt" (Stunde 0) mit den Sensorwerten
 if use_outdoor_sensor:
     x_sensor, h_sensor = calc_x_and_h(t_aussen_sensor, phi_aussen_sensor)
     t_aussen_jetzt = t_aussen_sensor
     x_aussen_jetzt = x_sensor
-    # Für die Grafik den ersten Punkt (Jetzt) anpassen
     temps_out[0] = t_aussen_sensor
     x_aussen_vorlauf[0] = x_sensor
 else:
@@ -117,5 +114,20 @@ with c2:
     st.metric(status_label, f"{x_aussen_jetzt:.2f} g/kg")
 with c3:
     diff_x = x_innen - x_aussen_jetzt
-    if
+    if diff_x > 0:
+        st.metric("Entfeuchtungs-Potenzial", f"+{diff_x:.2f} g/kg")
+    else:
+        st.metric("Feuchte-Last bei Lüftung", f"{diff_x:.2f} g/kg", delta_color="inverse")
+
+# --- PROGNOSE-GRAFIK ---
+st.markdown("---")
+st.subheader("📅 24-Stunden Lüftungs-Fahrplan")
+st.write("Vergleicht den Feuchtegehalt deines Raumes mit der Außenluft (Erster Punkt = aktueller Zustand):")
+
+fig_prognose = go.Figure()
+
+fig_prognose.add_trace(go.Scatter(
+    x=times, y=[x_innen]*24,
+    mode='lines', name='Deine Raumluft (Soll-Grenze)',
+    line=dict(color='rgba(31, 73, 125, 0.8)', width=3, dash='
     
