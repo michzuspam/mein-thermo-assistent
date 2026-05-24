@@ -8,7 +8,7 @@ st.set_page_config(page_title="TGA Thermo-Assistent", layout="wide")
 st.title("TGA Thermodynamik & Wetter-Assistent")
 
 # --- Wetter API Integration (Open-Meteo) ---
-@st.cache_data(ttl=600)  # Cache für 10 Minuten, um die API zu schonen
+@st.cache_data(ttl=600)  # Cache für 10 Minuten
 def get_live_weather(lat, lon):
     try:
         url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m&hourly=temperature_2m,relative_humidity_2m&timezone=Europe%2FBerlin"
@@ -17,7 +17,7 @@ def get_live_weather(lat, lon):
         current_temp = res["current"]["temperature_2m"]
         current_rh = res["current"]["relative_humidity_2m"]
         
-        # Trend für die nächsten 3 Stunden ermitteln (Aufwärmen oder Abkühlen)
+        # Trend für die nächsten 3 Stunden ermitteln
         next_temps = res["hourly"]["temperature_2m"][1:4]
         avg_next_temp = sum(next_temps) / len(next_temps)
         
@@ -42,7 +42,6 @@ def calc_thermodynamics(theta, phi):
 
 # --- SIDEBAR / EINSTELLUNGEN ---
 st.sidebar.header("📍 Standort & Raum-Sensoren")
-# Koordinaten voreingestellt auf deine Region
 lat = st.sidebar.number_input("Breitengrad (Latitude)", value=51.44, format="%.4f")
 lon = st.sidebar.number_input("Längengrad (Longitude)", value=7.57, format="%.4f")
 
@@ -57,11 +56,9 @@ t_aussen_live, phi_aussen_live, wetter_trend, api_success = get_live_weather(lat
 st.sidebar.markdown("---")
 st.sidebar.subheader("Außenklima (Live-Wetter)")
 if api_success:
-    st.sidebar.success(f" Wetterdaten aktiv geladen!")
     t_aussen = st.sidebar.slider("Außentemperatur (°C)", -10.0, 40.0, float(t_aussen_live), 0.5)
     phi_aussen = st.sidebar.slider("Relative Feuchte Außen (%)", 20, 100, int(phi_aussen_live), 5)
 else:
-    st.sidebar.error("Wetter-API nicht erreichbar. Fallback-Werte aktiv.")
     t_aussen = st.sidebar.slider("Außentemperatur (°C)", -10.0, 40.0, 8.0, 0.5)
     phi_aussen = st.sidebar.slider("Relative Feuchte Außen (%)", 20, 100, 85, 5)
 
@@ -74,10 +71,8 @@ col1, col2 = st.columns([1, 2])
 
 with col1:
     st.subheader("📊 Echtzeit-Analyse")
-    
     st.info(f"**Wetter-Trend:** {wetter_trend}")
     
-    # Werte-Karten
     st.metric("Enthalpie Innen (h_innen)", f"{h_in:.2f} kJ/kg")
     st.metric("Enthalpie Außen (h_aussen)", f"{h_out:.2f} kJ/kg")
     st.metric("Wassergehalt Innen (x_innen)", f"{x_in:.2f} g/kg")
@@ -86,7 +81,6 @@ with col1:
     st.markdown("---")
     st.subheader("🔔 Lüftungsempfehlung")
     
-    # Thermodynamische Entscheidungsmatrix
     if t_aussen > 25.0:
         st.error("❌ FENSTER ZU! Die Außenluft ist zu heiß (> 25°C). Du würdest dir die thermische Masse der Wände aufladen.")
     elif x_out >= x_in:
@@ -104,7 +98,6 @@ with col1:
 with col2:
     st.subheader("📈 hx-Diagramm (Mollier-Hintergrund)")
     
-    # Sättigungskurve berechnen
     t_range = np.linspace(-10, 40, 50)
     x_sat_line = []
     for t in t_range:
@@ -114,14 +107,12 @@ with col2:
         
     fig = go.Figure()
     
-    # Sättigungskurve plotten
     fig.add_trace(go.Scatter(
         x=x_sat_line, y=t_range,
         mode='lines', name='Sättigungslinie (100% r.F.)',
         line=dict(color='red', width=2, dash='dash')
     ))
     
-    # Zustandspunkte plotten
     fig.add_trace(go.Scatter(
         x=[x_out, x_in],
         y=[t_aussen, t_innen],
@@ -144,3 +135,4 @@ with col2:
     )
     
     st.plotly_chart(fig, use_container_width=True)
+
