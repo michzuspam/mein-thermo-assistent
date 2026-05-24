@@ -4,130 +4,132 @@ import plotly.graph_objects as go
 import requests
 from datetime import datetime, timedelta
 
-# App-Konfiguration für Smartphones optimiert
-st.set_page_config(page_title="TGA Lüftungsprognose", layout="wide")
-st.title("☀️ TGA Smart-Lüftungs-Vorhersager")
+st.set_page_config(page_title="Lüftung", layout="wide")
+st.title("☀️ TGA Lüftungs-Prognose")
 
-# --- Geocoding API (Ort in Koordinaten umwandeln) ---
-@st.cache_data(ttl=86400) # 24 Stunden cachen
-def get_coordinates_from_city(city_name):
-    if not city_name:
-        return 51.4400, 7.5700, "Schwerte (Standard)", True
+# --- ORTS-SUCHE ---
+@st.cache_data(ttl=86400)
+def get_geo(city):
+    if not city:
+        return 51.4400, 7.5700, "Schwerte"
     try:
-        url = f"https://api.open-meteo.com/v1/search?name={city_name}&count=1&language=de&format=json"
-        res = requests.get(url).json()
-        if "results" in res and len(res["results"]) > 0:
-            lat = res["results"][0]["latitude"]
-            lon = res["results"][0]["longitude"]
-            name = res["results"][0]["name"]
-            return lat, lon, name, True
-        return 51.4400, 7.5700, f"'{city_name}' nicht gefunden (Nutze Schwerte)", False
-    except Exception:
-        return 51.4400, 7.5700, "Schwerte (Fallback wegen Fehler)", False
+        url = f"https://api.open-meteo.com/v1/search?name={city}&count=1&language=de&format=json"
+        r = requests.get(url).json()
+        if "results" in r:
+            res = r["results"][0]
+            return res["latitude"], res["longitude"], res["name"]
+        return 51.4400, 7.5700, "Schwerte"
+    except:
+        return 51.4400, 7.5700, "Schwerte"
 
-# --- Wetter-API für 24h-Vorhersage ---
+# --- WEATHER FORECAST ---
 @st.cache_data(ttl=600)
-def get_24h_forecast(lat, lon):
+def get_weather(lat, lon):
     try:
         url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,relative_humidity_2m&timezone=Europe%2FBerlin"
-        res = requests.get(url).json()
-        
-        times_raw = res["hourly"]["time"][:24]
-        temps = res["hourly"]["temperature_2m"][:24]
-        rhs = res["hourly"]["relative_humidity_2m"][:24]
-        
-        # HIER KORRIGIERT: %M statt %O für die saubere Darstellung
-        times = [datetime.strptime(t, "%Y-%m-%dT%H:%M").strftime("%H:%M Uhr") for t in times_raw]
-        return times, temps, rhs, True
-    except Exception:
-        times = [f"{(datetime.now() + timedelta(hours=i)).strftime('%H:%M Uhr')}" for i in range(24)]
-        temps = [15.0 + 5.0 * np.sin(i/3) for i in range(24)]
-        rhs = [70 + 15 * np.cos(i/3) for i in range(24)]
-        return times, temps, rhs, False
+        r = requests.get(url).json()
+        t_raw = r["hourly"]["time"][:24]
+        temps = r["hourly"]["temperature_2m"][:24]
+        rh = r["hourly"]["relative_humidity_2m"][:24]
+        times = [datetime.strptime(x, "%Y-%m-%dT%H:%M").strftime("%H:%M") for x in t_raw]
+        return times, temps, rh
+    except:
+        times = [f"{i:02d}:00" for i in range(24)]
+        temps = [18.0] * 24
+        rh = [65.0] * 24
+        return times, temps, rh
 
-# --- Thermodynamische Berechnung (Mollier-Formeln) ---
-def calc_x_and_h(theta, phi):
-    p_sat = 610.78 * np.exp((17.08085 * theta) / (234.175 + theta))
+# --- MOLLIER RECHNUNG ---
+def calc_x(t, phi):
+    p_sat = 610.78 * np.exp((17.08085 * t) / (234.175 + t))
     p_d = (phi / 100.0) * p_sat
-    x = 622.0 * p_d / (101325.0 - p_d) 
-    h = 1.005 * theta + (x / 1000.0) * (2501.0 + 1.86 * theta) 
-    return x, h
+    return 622.0 * p_d / (101325.0 - p_d)
 
-# --- EINSTELLUNGEN DIREKT AUF DER HAUPTSEITE ---
-with st.expander("⚙️ Sensoren & Standort einstellen", expanded=True):
-    city_input = st.text_input("📍 Ort eingeben (z.B. Stadtname)", value="Schwerte")
-    lat, lon, gefundenes_ziel, geo_success = get_coordinates_from_city(city_input)
-    if city_input:
-        st.caption(f"Verwendeter Standort: **{gefundenes_ziel}** (Lat: {lat:.4f}, Lon: {lon:.4f})")
+# --- EINSTELLUNGEN ---
+with st.expander("⚙️ Einstellungen", expanded=True):
+    stadt = st.text_input("📍 Ort", value="Schwerte")
+    lat, lon, stadt_name = get_geo(stadt)
+    st.caption(f"Ort: {stadt_name} ({lat:.2f}, {lon:.2f})")
     
     st.markdown("---")
+    t_in = st.slider("Raum-Temp (°C)", 15.0, 28.0, 22.0, 0.5)
+    h_in = st.slider("Hygrometer Innen (%)", 20, 90, 55, 5)
     
-    col_in, col_out = st.columns(2)
-    with col_in:
-        st.markdown("**🏠 Innensensor**")
-        t_innen = st.slider("Raumtemperatur (°C)", 15.0, 28.0, 22.0, 0.5)
-        phi_innen = st.slider("Hygrometer Innen (%)", 20, 90, 55, 5)
-        
-    with col_out:
-        st.markdown("**🌳 Außensensor (Optional)**")
-        use_outdoor_sensor = st.checkbox("Eigene Außensensoren nutzen", value=False, 
-                                         help="Aktivieren, wenn du feste Werte deines eigenen Außensensors statt der aktuellen Wetterstation eintragen willst.")
-        
-        if use_outdoor_sensor:
-            t_aussen_sensor = st.slider("Echte Außentemperatur (°C)", -10.0, 40.0, 15.0, 0.5)
-            phi_aussen_sensor = st.slider("Echte relative Feuchte Außen (%)", 20, 100, 70, 5)
-        else:
-            st.info("Nutzt aktuell die Live-Wetterdaten für den Momentzustand.")
+    st.markdown("---")
+    use_sensor = st.checkbox("Eigener Außensensor")
+    if use_sensor:
+        t_out_s = st.slider("Sensor-Temp Außen (°C)", -10.0, 40.0, 15.0, 0.5)
+        h_out_s = st.slider("Sensor Feuchte Außen (%)", 20, 100, 70, 5)
 
-# Berechne aktuellen Innenzustand
-x_innen, h_innen = calc_x_and_h(t_innen, phi_innen)
+# Werte berechnen
+x_in = calc_x(t_in, h_in)
+times, temps_out, rh_out = get_weather(lat, lon)
 
-# Wettervorhersage abrufen
-times, temps_out, rhs_out, api_success = get_24h_forecast(lat, lon)
+x_out_list = []
+for t, f in zip(temps_out, rh_out):
+    x_out_list.append(calc_x(t, f))
 
-# Verarbeite die 24h-Daten thermodynamisch
-x_aussen_vorlauf = []
-h_aussen_vorlauf = []
-for t, f in zip(temps_out, rhs_out):
-    x_o, h_o = calc_x_and_h(t, f)
-    x_aussen_vorlauf.append(x_o)
-    h_aussen_vorlauf.append(h_o)
-
-if use_outdoor_sensor:
-    x_sensor, h_sensor = calc_x_and_h(t_aussen_sensor, phi_aussen_sensor)
-    t_aussen_jetzt = t_aussen_sensor
-    x_aussen_jetzt = x_sensor
-    temps_out[0] = t_aussen_sensor
-    x_aussen_vorlauf[0] = x_sensor
+if use_sensor:
+    t_act_out = t_out_s
+    x_act_out = calc_x(t_out_s, h_out_s)
+    temps_out[0] = t_out_s
+    x_out_list[0] = x_act_out
 else:
-    t_aussen_jetzt = temps_out[0]
-    x_aussen_jetzt = x_aussen_vorlauf[0]
+    t_act_out = temps_out[0]
+    x_act_out = x_out_list[0]
 
-# --- AKTUELLER STATUS ---
+# --- STATUS ---
 st.markdown("---")
-st.subheader("📊 Momentane Luftbilanz")
-c1, c2, c3 = st.columns(3)
-with c1:
-    st.metric("Absolute Feuchte Innen", f"{x_innen:.2f} g/kg")
-with c2:
-    status_label = "Absolute Feuchte Außen (dein Sensor)" if use_outdoor_sensor else "Absolute Feuchte Außen (Wetter)"
-    st.metric(status_label, f"{x_aussen_jetzt:.2f} g/kg")
-with c3:
-    diff_x = x_innen - x_aussen_jetzt
-    if diff_x > 0:
-        st.metric("Entfeuchtungs-Potenzial", f"+{diff_x:.2f} g/kg")
-    else:
-        st.metric("Feuchte-Last bei Lüftung", f"{diff_x:.2f} g/kg", delta_color="inverse")
+st.subheader("📊 Luftbilanz")
+col1, col2, col3 = st.columns(3)
+col1.metric("Feuchte Innen", f"{x_in:.2f} g/kg")
+col2.metric("Feuchte Außen", f"{x_act_out:.2f} g/kg")
 
-# --- PROGNOSE-GRAFIK ---
+diff_x = x_in - x_act_out
+if diff_x > 0:
+    col3.metric("Potenzial", f"+{diff_x:.2f} g/kg")
+else:
+    col3.metric("Feuchtelast", f"{diff_x:.2f} g/kg", delta_color="inverse")
+
+# --- GRAFIK ---
 st.markdown("---")
-st.subheader("📅 24-Stunden Lüftungs-Fahrplan")
-st.write("Vergleicht den Feuchtegehalt deines Raumes mit der Außenluft (Erster Punkt = aktueller Zustand):")
+st.subheader("📅 24-Stunden Verlauf")
 
-fig_prognose = go.Figure()
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    x=times, y=[x_in]*24, mode='lines', 
+    name='Innen', line=dict(color='blue', width=2, dash='dash')
+))
+fig.add_trace(go.Scatter(
+    x=times, y=x_out_list, mode='lines+markers', 
+    name='Außen (Trend)', line=dict(color='cyan', width=2)
+))
 
-fig_prognose.add_trace(go.Scatter(
-    x=times, y=[x_innen]*24,
-    mode='lines', name='Deine Raumluft (Soll-Grenze)',
-    line=dict(color='rgba(31, 73, 125, 0.8)', width=3, dash='
+fig.update_layout(
+    xaxis_title="Uhrzeit", yaxis_title="Wassergehalt x [g/kg]",
+    height=350, margin=dict(l=10, r=10, t=10, b=10)
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# --- AMPEL ---
+st.markdown("---")
+st.subheader("⏱️ Empfehlung")
+
+if t_act_out > 25.0:
+    st.error("❌ ZU HEISS: Außen über 25°C. Fenster zu lassen!")
+elif x_act_out >= x_in:
+    st.warning("⚠️ SCHWÜL: Außen feuchter als drinnen. Fenster zu!")
+else:
+    st.success("✅ JETZT LÜFTEN: Außenluft entfeuchtet den Raum.")
+
+# Stündliche Vorschau
+ok_hours = []
+for i in range(24):
+    if x_out_list[i] < x_in and temps_out[i] <= 25.0:
+        ok_hours.append(times[i])
+
+if ok_hours:
+    st.info(f"🟢 Gute Lüftungsstunden: {', '.join(ok_hours[:6])}")
+else:
+    st.error("🔴 Keine optimalen Lüftungsfenster in Sicht.")
     
