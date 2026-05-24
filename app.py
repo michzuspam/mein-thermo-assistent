@@ -2,137 +2,137 @@ import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
 import requests
+from datetime import datetime, timedelta
 
-# App-Konfiguration & Design für Mobile optimiert
-st.set_page_config(page_title="TGA Thermo-Assistent", layout="wide")
-st.title("TGA Thermodynamik & Wetter-Assistent")
+# App-Konfiguration für Smartphones optimiert
+st.set_page_config(page_title="TGA Lüftungsprognose", layout="wide")
+st.title("☀️ TGA Smart-Lüftungs-Vorhersager")
 
-# --- Wetter API Integration (Open-Meteo) ---
-@st.cache_data(ttl=600)  # Cache für 10 Minuten
-def get_live_weather(lat, lon):
+# --- Wetter-API für 24h-Vorhersage ---
+@st.cache_data(ttl=600)
+def get_24h_forecast(lat, lon):
     try:
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m&hourly=temperature_2m,relative_humidity_2m&timezone=Europe%2FBerlin"
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,relative_humidity_2m&timezone=Europe%2FBerlin"
         res = requests.get(url).json()
         
-        current_temp = res["current"]["temperature_2m"]
-        current_rh = res["current"]["relative_humidity_2m"]
+        times_raw = res["hourly"]["time"][:24]
+        temps = res["hourly"]["temperature_2m"][:24]
+        rhs = res["hourly"]["relative_humidity_2m"][:24]
         
-        # Trend für die nächsten 3 Stunden ermitteln
-        next_temps = res["hourly"]["temperature_2m"][1:4]
-        avg_next_temp = sum(next_temps) / len(next_temps)
-        
-        if avg_next_temp > current_temp + 0.5:
-            trend = "Aufwärmend (Hitzetrend)"
-        elif avg_next_temp < current_temp - 0.5:
-            trend = "Abendliche Abkühlung"
-        else:
-            trend = "Stabil"
-            
-        return current_temp, current_rh, trend, True
+        # Zeiten in lesbare Stunden formatieren
+        times = [datetime.strptime(t, "%Y-%m-%dT%H:%M").strftime("%H:%O Uhr") for t in times_raw]
+        return times, temps, rhs, True
     except Exception:
-        return 8.0, 85, "Keine Verbindung", False
+        # Fallback-Daten falls API offline
+        times = [f"{(datetime.now() + timedelta(hours=i)).strftime('%H:00')}" for i in range(24)]
+        temps = [15.0 + 5.0 * np.sin(i/3) for i in range(24)]
+        rhs = [70 + 15 * np.cos(i/3) for i in range(24)]
+        return times, temps, rhs, False
 
-# --- MATHEMATISCHE TGA-FUNKTIONEN ---
-def calc_thermodynamics(theta, phi):
+# --- Thermodynamische Berechnung (Mollier-Formeln) ---
+def calc_x_and_h(theta, phi):
+    # theta: Temp in °C, phi: rel. Feuchte in %
     p_sat = 610.78 * np.exp((17.08085 * theta) / (234.175 + theta))
     p_d = (phi / 100.0) * p_sat
-    x = 622.0 * p_d / (101325.0 - p_d)
-    h = 1.005 * theta + (x / 1000.0) * (2501.0 + 1.86 * theta)
+    x = 622.0 * p_d / (101325.0 - p_d) # g/kg trockene Luft
+    h = 1.005 * theta + (x / 1000.0) * (2501.0 + 1.86 * theta) # kJ/kg
     return x, h
 
-# --- SIDEBAR / EINSTELLUNGEN ---
-st.sidebar.header("📍 Standort & Raum-Sensoren")
-lat = st.sidebar.number_input("Breitengrad (Latitude)", value=51.44, format="%.4f")
-lon = st.sidebar.number_input("Längengrad (Longitude)", value=7.57, format="%.4f")
+# --- EINSTELLUNGEN DIREKT AUF DER HAUPTSEITE (Mobil optimiert) ---
+with st.expander("⚙️ Sensoren & Standort einstellen", expanded=True):
+    col_geo, col_room = st.columns(2)
+    with col_geo:
+        st.markdown("**📍 Wetter-Standort**")
+        # Standardkoordinaten für Schwerte hinterlegt
+        lat = st.number_input("Breitengrad (Latitude)", value=51.4400, format="%.4f")
+        lon = st.number_input("Längengrad (Longitude)", value=7.5700, format="%.4f")
+    with col_room:
+        st.markdown("**🏠 Aktuelles Raumklima**")
+        t_innen = st.slider("Raumtemperatur (°C)", 15.0, 28.0, 22.0, 0.5)
+        phi_innen = st.slider("Hygrometer Innen (%)", 20, 90, 55, 5)
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("Innenraum-Zustand")
-t_innen = st.sidebar.slider("Raumtemperatur (°C)", 15.0, 30.0, 22.0, 0.5)
-phi_innen = st.sidebar.slider("Relative Feuchte Innen (%)", 20, 90, 55, 5)
+# Berechne aktuellen Innenzustand
+x_innen, h_innen = calc_x_and_h(t_innen, phi_innen)
 
-# Wetterdaten live abrufen
-t_aussen_live, phi_aussen_live, wetter_trend, api_success = get_live_weather(lat, lon)
+# Wettervorhersage abrufen
+times, temps_out, rhs_out, api_success = get_24h_forecast(lat, lon)
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("Außenklima (Live-Wetter)")
-if api_success:
-    t_aussen = st.sidebar.slider("Außentemperatur (°C)", -10.0, 40.0, float(t_aussen_live), 0.5)
-    phi_aussen = st.sidebar.slider("Relative Feuchte Außen (%)", 20, 100, int(phi_aussen_live), 5)
-else:
-    t_aussen = st.sidebar.slider("Außentemperatur (°C)", -10.0, 40.0, 8.0, 0.5)
-    phi_aussen = st.sidebar.slider("Relative Feuchte Außen (%)", 20, 100, 85, 5)
+if not api_success:
+    st.warning("⚠️ Live-Wetterdaten konnten nicht geladen werden. Nutze thermodynamische Demo-Vorhersage.")
 
-# --- BERECHNUNGEN DURCHFÜHREN ---
-x_in, h_in = calc_thermodynamics(t_innen, phi_innen)
-x_out, h_out = calc_thermodynamics(t_aussen, phi_aussen)
+# Berechne thermodynamische Werte für den Außen-Verlauf
+x_aussen_vorlauf = []
+h_aussen_vorlauf = []
+for t, f in zip(temps_out, rhs_out):
+    x_o, h_o = calc_x_and_h(t, f)
+    x_aussen_vorlauf.append(x_o)
+    h_aussen_vorlauf.append(h_o)
 
-# --- LAYOUT ---
-col1, col2 = st.columns([1, 2])
+# Aktuelle Werte (Stunde 0)
+t_aussen_jetzt = temps_out[0]
+phi_aussen_jetzt = rhs_out[0]
+x_aussen_jetzt = x_aussen_vorlauf[0]
 
-with col1:
-    st.subheader("📊 Echtzeit-Analyse")
-    st.info(f"**Wetter-Trend:** {wetter_trend}")
-    
-    st.metric("Enthalpie Innen (h_innen)", f"{h_in:.2f} kJ/kg")
-    st.metric("Enthalpie Außen (h_aussen)", f"{h_out:.2f} kJ/kg")
-    st.metric("Wassergehalt Innen (x_innen)", f"{x_in:.2f} g/kg")
-    st.metric("Wassergehalt Außen (x_aussen)", f"{x_out:.2f} g/kg")
-    
-    st.markdown("---")
-    st.subheader("🔔 Lüftungsempfehlung")
-    
-    if t_aussen > 25.0:
-        st.error("❌ FENSTER ZU! Die Außenluft ist zu heiß (> 25°C). Du würdest dir die thermische Masse der Wände aufladen.")
-    elif x_out >= x_in:
-        st.warning("⚠️ FENSTER ZU! Die Außenluft ist absolut feuchter als drinnen (Lüftungsparadoxon). Dein Raum würde schwüler werden.")
-    elif wetter_trend == "Aufwärmend (Hitzetrend)" and t_aussen > 22.0:
-        st.error("❌ FENSTER ZU! Der Wetterbericht meldet steigende Temperaturen. Fenster jetzt schließen, um Kühle einzusperren.")
-    elif h_out < h_in:
-        if wetter_trend == "Abendliche Abkühlung":
-            st.success("✅ JETZT STOSSLÜFTEN! Die Abendabkühlung läuft. Perfekter Zeitpunkt, um Feuchte und sensible Wärme abzuführen.")
-        else:
-            st.success("✅ LÜFTEN EMPFOHLEN! Die Außenluft entzieht dem Raum im Gesamtsaldo Energie (Enthalpie-Vorteil).")
+# --- AKTUELLER STATUS ---
+st.markdown("---")
+st.subheader("📊 Momentane Luftbilanz")
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.metric("Absolute Feuchte Innen", f"{x_innen:.2f} g/kg")
+with c2:
+    st.metric("Absolute Feuchte Außen (Jetzt)", f"{x_aussen_jetzt:.2f} g/kg")
+with c3:
+    # Differenz bestimmen
+    diff_x = x_innen - x_aussen_jetzt
+    if diff_x > 0:
+        st.metric("Entfeuchtungs-Potenzial", f"+{diff_x:.2f} g/kg", delta_color="normal")
     else:
-        st.info("ℹ️ Keine akute Empfehlung. Luftzustände sind nahezu identisch.")
+        st.metric("Feuchte-Last bei Lüftung", f"{diff_x:.2f} g/kg", delta_color="inverse")
 
-with col2:
-    st.subheader("📈 hx-Diagramm (Mollier-Hintergrund)")
-    
-    t_range = np.linspace(-10, 40, 50)
-    x_sat_line = []
-    for t in t_range:
-        p_s = 610.78 * np.exp((17.08085 * t) / (234.175 + t))
-        x_s = 622.0 * p_s / (101325.0 - p_s)
-        x_sat_line.append(x_s)
-        
-    fig = go.Figure()
-    
-    fig.add_trace(go.Scatter(
-        x=x_sat_line, y=t_range,
-        mode='lines', name='Sättigungslinie (100% r.F.)',
-        line=dict(color='red', width=2, dash='dash')
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=[x_out, x_in],
-        y=[t_aussen, t_innen],
-        mode='markers+lines',
-        name='Luftzustände',
-        marker=dict(size=12, color=['#31859C', '#1F497D']),
-        line=dict(color='rgba(0,0,0,0.2)', width=2)
-    ))
-    
-    fig.add_annotation(x=x_in, y=t_innen, text=" Raumluft", showarrow=True, arrowhead=2)
-    fig.add_annotation(x=x_out, y=t_aussen, text=" Außenluft (Wetter)", showarrow=True, arrowhead=2)
+# --- PROGNOSE-GRAFIK (DIE ZEITVORHERSAGE) ---
+st.markdown("---")
+st.subheader("📅 24-Stunden Lüftungs-Fahrplan")
+st.write("Vergleicht den konstanten Feuchtegehalt deines Raumes mit der dynamischen Außenluft-Vorhersage:")
 
-    fig.update_layout(
-        xaxis_title="Wassergehalt x [g/kg]",
-        yaxis_title="Temperatur ϑ [°C]",
-        xaxis=dict(range=[0, 20]),
-        yaxis=dict(range=[-5, 35]),
-        height=550,
-        margin=dict(l=20, r=20, t=20, b=20)
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
+# Erstelle den zeitlichen Linien-Plot
+fig_prognose = go.Figure()
 
+# Raumluft-Linie (Konstant als Referenz)
+fig_prognose.add_trace(go.Scatter(
+    x=times, y=[x_innen]*24,
+    mode='lines', name='Deine Raumluft (Soll-Grenze)',
+    line=dict(color='rgba(31, 73, 125, 0.8)', width=3, dash='dash')
+))
+
+# Außenluft-Feuchtigkeitsverlauf
+fig_prognose.add_trace(go.Scatter(
+    x=times, y=x_aussen_vorlauf,
+    mode='lines+markers', name='Vorhersage Außenluft (Feuchte x)',
+    line=dict(color='#31859C', width=3),
+    marker=dict(size=6)
+))
+
+fig_prognose.update_layout(
+    xaxis_title="Uhrzeit (Nächste 24 Stunden)",
+    yaxis_title="Wassergehalt x [g/kg trockene Luft]",
+    height=400,
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    margin=dict(l=10, r=10, t=10, b=10)
+)
+st.plotly_chart(fig_prognose, use_container_width=True)
+
+# --- STÜNDLICHE LÜFTUNGS-AMPEL ---
+st.subheader("⏱️ Wann macht das Fensteröffnen Sinn?")
+
+# Analyse der optimalen Stunden
+optimale_stunden = []
+for i in range(24):
+    # Bedingung: Absolut trockener UND Außenluft nicht zu heiß (Sommerlicher Wärmeschutz < 25°C)
+    if x_aussen_vorlauf[i] < x_innen and temps_out[i] <= 25.0:
+        optimale_stunden.append(times[i])
+
+if optimale_stunden:
+    st.success(f"🟢 **Perfekte Lüftungs-Fenster in den nächsten 24h:** {', '.join(optimale_stunden[:6])}...")
+    st.info("💡 **Tipp:** In diesen grün markierten Phasen ist die Außenluft absolut trockener als deine Raumluft. Ein Stoßlüften transportiert effektiv Feuchtigkeit nach draußen, ohne die Räume zu überhitzen.")
+else:
+    st.error("🔴 In den nächsten 24 Stunden gibt es keine energetisch sinnvollen Lüftungsfenster. Die Außenluft transportiert entweder zusätzliche Feuchtigkeit hinein oder ist zu heiß (>25°C). Fenster geschlossen halten!")
