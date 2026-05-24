@@ -52,14 +52,17 @@ with st.expander("⚙️ Einstellungen", expanded=True):
     st.caption(f"Ort: {stadt_name} ({lat:.2f}, {lon:.2f})")
     
     st.markdown("---")
-    t_in = st.slider("Raum-Temp (°C)", 15.0, 28.0, 22.0, 0.5)
-    h_in = st.slider("Hygrometer Innen (%)", 20, 90, 55, 5)
+    # HIER GEÄNDERT: Schrittweite jetzt auf 0.1 eingestellt
+    t_in = st.slider("Raum-Temp (°C)", 15.0, 28.0, 22.0, 0.1)
+    # Luftfeuchtigkeit jetzt in feinen 1%-Schritten statt 5%
+    h_in = st.slider("Hygrometer Innen (%)", 20, 90, 55, 1)
     
     st.markdown("---")
     use_sensor = st.checkbox("Eigener Außensensor")
     if use_sensor:
-        t_out_s = st.slider("Sensor-Temp Außen (°C)", -10.0, 40.0, 15.0, 0.5)
-        h_out_s = st.slider("Sensor Feuchte Außen (%)", 20, 100, 70, 5)
+        # HIER GEÄNDERT: Auch außen jetzt feine 0.1er und 1% Schritte
+        t_out_s = st.slider("Sensor-Temp Außen (°C)", -10.0, 40.0, 15.0, 0.1)
+        h_out_s = st.slider("Sensor Feuchte Außen (%)", 20, 100, 70, 1)
 
 # Werte berechnen
 x_in = calc_x(t_in, h_in)
@@ -132,4 +135,3 @@ if ok_hours:
     st.info(f"🟢 Gute Lüftungsstunden: {', '.join(ok_hours[:6])}")
 else:
     st.error("🔴 Keine optimalen Lüftungsfenster in Sicht.")
-    
