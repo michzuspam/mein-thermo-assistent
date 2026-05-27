@@ -1,77 +1,124 @@
+# streamlit_app.py
 import streamlit as st
+import plotly.graph_objects as go
 import numpy as np
-import requests
 
-st.set_page_config(page_title="Lüftungs-Profi", layout="wide")
-st.title("☀️ TGA Lüftungs-Prognose")
+st.set_page_config(page_title="Lüftungsrechner & Mollier", layout="wide")
+st.title("Thermodynamischer Lüftungsrechner mit h,x-Diagramm")
 
-# --- THERMODYNAMIK-KERN ---
-def calc_x_and_h(t, phi):
-    # Magnus-Formel für Sättigungsdampfdruck
-    p_sat = 610.78 * np.exp((17.08085 * t) / (234.175 + t))
-    p_d = (phi / 100.0) * p_sat
-    x = 622.0 * p_d / (101325.0 - p_d)
-    h = 1.005 * t + (x / 1000.0) * (2501.0 + 1.86 * t)
-    return x, h
+# --- Seitenleiste: Eingaben ---
+st.sidebar.header("Raumluft")
+t_raum = st.sidebar.number_input("Temperatur Raum [°C]", value=23.5)
+phi_raum = st.sidebar.slider("Relative Feuchte Raum [%]", 0, 100, 55)
+v_raum = st.sidebar.number_input("Volumenstrom Raum [m³/h]", value=100.0)
 
-def get_live_weather(city):
-    try:
-        geo_url = f"https://api.open-meteo.com/v1/search?name={city}&count=1&language=de&format=json"
-        res = requests.get(geo_url, timeout=5).json()
-        if "results" in res:
-            lat, lon = res["results"][0]["latitude"], res["results"][0]["longitude"]
-            w_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,relative_humidity_2m"
-            w = requests.get(w_url, timeout=5).json()
-            return w["hourly"]["temperature_2m"][0], w["hourly"]["relative_humidity_2m"][0]
-    except:
-        pass
-    return 18.0, 65.0
+st.sidebar.header("Außenluft")
+t_aussen = st.sidebar.number_input("Temperatur Außen [°C]", value=16.0)
+phi_aussen = st.sidebar.slider("Relative Feuchte Außen [%]", 0, 100, 85)
+v_aussen = st.sidebar.number_input("Volumenstrom Außen [m³/h]", value=100.0)
 
-# --- EINSTELLUNGEN ---
-stadt = st.text_input("Ort eingeben (Enter drücken):", value="Schwerte")
-t_out_live, h_out_live = get_live_weather(stadt)
+# --- Berechnungen ---
+def magnus_psat(t):
+    return 610.78 * np.exp((17.08085 * t) / (234.175 + t))
 
-st.subheader("Außenbedingungen")
-use_sensor = st.checkbox("Eigener Außensensor verwenden?", value=False)
-c_out1, c_out2 = st.columns(2)
+def x_aus_phi_t(phi, t):
+    psat = magnus_psat(t)
+    pd = phi / 100 * psat
+    return 622 * pd / (101325 - pd)  # g/kg
 
-if use_sensor:
-    t_out = c_out1.number_input("Sensor Temp Außen (°C):", value=t_out_live, step=0.1)
-    h_out = c_out2.number_input("Sensor Feuchte Außen (%):", value=h_out_live, step=1.0)
-else:
-    t_out, h_out = t_out_live, h_out_live
-    st.info(f"Live-Daten {stadt}: {t_out}°C / {h_out}%")
+def enthalpie(t, x):
+    return 1.005 * t + x / 1000 * (2501 + 1.86 * t)  # kJ/kg
 
-st.subheader("Innenbedingungen")
-c_in1, c_in2 = st.columns(2)
-t_in = c_in1.slider("Raum-Temperatur (°C)", 15.0, 30.0, 22.0, 0.1)
-h_in = c_in2.slider("Raum-Feuchte (%)", 20, 90, 55, 1)
+x_raum = x_aus_phi_t(phi_raum, t_raum)
+x_aussen = x_aus_phi_t(phi_aussen, t_aussen)
+h_raum = enthalpie(t_raum, x_raum)
+h_aussen = enthalpie(t_aussen, x_aussen)
 
-# --- BERECHNUNGEN ---
-x_in, h_in_val = calc_x_and_h(t_in, h_in)
-x_out, h_out_val = calc_x_and_h(t_out, h_out)
+# Mischung
+v_ges = v_raum + v_aussen
+t_misch = (t_raum * v_raum + t_aussen * v_aussen) / v_ges if v_ges > 0 else 0
+x_misch = (x_raum * v_raum + x_aussen * v_aussen) / v_ges if v_ges > 0 else 0
+h_misch = (h_raum * v_raum + h_aussen * v_aussen) / v_ges if v_ges > 0 else 0
 
-# Auskühl-Simulation: Raum kühlt um 2 Grad ab
-t_sim = t_in - 2.0
-p_sat_sim = 610.78 * np.exp((17.08085 * t_sim) / (234.175 + t_sim))
-p_d_out = (x_out * 101325.0) / (622.0 + x_out)
-rh_sim = (p_d_out / p_sat_sim) * 100
+# Relative Feuchte der Mischluft
+psat_misch = magnus_psat(t_misch)
+pd_misch = x_misch * 101325 / (622 + x_misch)
+phi_misch = (pd_misch / psat_misch) * 100 if psat_misch > 0 else 0
 
-# --- DASHBOARD ---
-st.markdown("---")
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Enthalpie Innen", f"{h_in_val:.1f} kJ/kg")
-col2.metric("Enthalpie Außen", f"{h_out_val:.1f} kJ/kg")
-col3.metric("Abs. Feuchte Innen", f"{x_in:.2f} g/kg")
-col4.metric("Abs. Feuchte Außen", f"{x_out:.2f} g/kg")
+# --- Lüftungsempfehlung ---
+def empfehlung(t_a, h_a, h_i):
+    if t_a > 25:
+        return "❌ NICHT LÜFTEN – Behaglichkeitsgrenze (>25 °C)"
+    if h_a < h_i:
+        return "✅ LÜFTEN sinnvoll – Außenluft-Enthalpie niedriger"
+    else:
+        return "❌ NICHT LÜFTEN – Außenluft-Enthalpie höher"
 
-# --- LOGIK ---
-st.markdown("---")
-if t_out > 25:
-    st.error("🛑 ZUMACHEN: Außenluft > 25°C (Überhitzungsschutz).")
-elif x_out >= x_in:
-    st.error("🛑 ZUMACHEN: Außenluft zu feucht (Lüftungsparadoxon).")
-elif t_out < t_in and rh_sim >= 60.0:
-    st.error(f"🛑 ZUMACHEN: Auskühl-Gefahr! Relative Feuchte würde bei Abkühlung auf {rh_sim:.1f}% steigen.")
-else:
-    st.success("🟢 LÜFTEN: Zustand sicher und entfeuchtend.")
+# --- Darstellung ---
+col1, col2 = st.columns(2)
+with col1:
+    st.subheader("Zustandsgrößen")
+    st.write(f"**Raumluft**: x = {x_raum:.1f} g/kg, h = {h_raum:.1f} kJ/kg")
+    st.write(f"**Außenluft**: x = {x_aussen:.1f} g/kg, h = {h_aussen:.1f} kJ/kg")
+    st.subheader("Mischluft")
+    st.write(f"Temperatur = {t_misch:.1f} °C")
+    st.write(f"Abs. Feuchte = {x_misch:.1f} g/kg")
+    st.write(f"Relative Feuchte = {phi_misch:.1f} %")
+    st.write(f"Enthalpie = {h_misch:.1f} kJ/kg")
+
+with col2:
+    st.subheader("Lüftungsempfehlung")
+    st.markdown(f"### {empfehlung(t_aussen, h_aussen, h_raum)}")
+    # Behaglichkeitsstatus Raum
+    if phi_raum < 40:
+        st.warning("Raumluft zu trocken (<40 %)")
+    elif phi_raum > 60:
+        st.warning("Raumluft zu feucht (>60 %)")
+    else:
+        st.success("Raumluft im Behaglichkeitsbereich (40–60 %)")
+
+# --- hx-Diagramm (Plotly) ---
+st.subheader("Interaktives h,x-Diagramm (Mollier)")
+
+# Sättigungslinie
+t_range = np.linspace(-10, 50, 100)
+x_sat = [x_aus_phi_t(100, t) for t in t_range]
+
+# Linien konstanter relativer Feuchte (20 %, 40 %, 60 %, 80 %)
+phi_lines = [20, 40, 60, 80]
+phi_data = {}
+for phi in phi_lines:
+    x_vals = [x_aus_phi_t(phi, t) for t in t_range]
+    phi_data[phi] = x_vals
+
+fig = go.Figure()
+
+# Sättigung
+fig.add_trace(go.Scatter(x=x_sat, y=t_range, mode='lines', name='φ=100 %',
+                         line=dict(color='black', width=2)))
+
+# Weitere φ-Linien
+colors = ['lightblue', 'lightgreen', 'orange', 'red']
+for idx, phi in enumerate(phi_lines):
+    fig.add_trace(go.Scatter(x=phi_data[phi], y=t_range, mode='lines',
+                             name=f'φ={phi} %',
+                             line=dict(color=colors[idx], width=1, dash='dash')))
+
+# Zustandspunkte
+fig.add_trace(go.Scatter(x=[x_raum, x_aussen, x_misch],
+                         y=[t_raum, t_aussen, t_misch],
+                         mode='markers+text',
+                         name='Zustandspunkte',
+                         text=['Raum', 'Außen', 'Misch'],
+                         textposition='top center',
+                         marker=dict(size=10, color='red')))
+
+fig.update_layout(
+    title="h,x-Diagramm mit Zustandspunkten",
+    xaxis_title="Wassergehalt x [g/kg]",
+    yaxis_title="Temperatur [°C]",
+    legend=dict(x=0.01, y=0.99),
+    margin=dict(l=40, r=40, t=40, b=40)
+)
+
+st.plotly_chart(fig, use_container_width=True)
