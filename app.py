@@ -307,7 +307,8 @@ with tab9:
     with col1:
         V_ue = st.number_input("Volumenstrom [m³/h]", value=100, key="ue_v")
     with col2:
-        st.write("Luftdichte ρ = 1,2 kg/m³")
+        rho = 1.2  # Luftdichte definiert, damit kein NameError auftritt
+        st.write(f"Luftdichte ρ = {rho} kg/m³")
 
     st.subheader("Zulässige Druckdifferenz Δp (nach DIN 1946-6)")
     dp_wahl = st.radio(
@@ -322,7 +323,7 @@ with tab9:
     alpha_gitter = 0.72
     st.write(f"α Türspalt = {alpha_tuer},  α Gitter = {alpha_gitter}")
 
-    # Berechnung der freien Flächen
+    # Berechnung der freien Flächen (jetzt mit dp und rho sicher definiert)
     A_tuer = (V_ue/3600) / (alpha_tuer * np.sqrt(2*dp/rho))
     A_gitter = (V_ue/3600) / (alpha_gitter * np.sqrt(2*dp/rho))
 
@@ -353,8 +354,33 @@ with tab9:
         "**Maximal empfohlene Strömungsgeschwindigkeiten:**\n"
         "- **Türspalt**: ≤ **1,5 m/s** – höhere Geschwindigkeiten können Pfeifgeräusche verursachen.\n"
         "- **Überströmgitter**: ≤ **1,0 m/s** – für einen akustisch neutralen Betrieb (ca. 1 Pa Druckabfall).\n"
-        "- Diese Grenzwerte sind unabhängig von der Norm; sie stellen die Komfortgrenze dar."
+        "- Diese Grenzwerte stellen den Komfort sicher und sind unabhängig von der Norm."
     )
+
+    # ----- Interaktive Dimensionierung (Breite × Höhe) -----
+    st.subheader("🔧 Überströmungsgitter dimensionieren")
+    st.markdown("Geben Sie eine gewünschte Gitterabmessung vor – die andere wird automatisch berechnet.")
+    dim_modus = st.radio("Vorgabe wählen:", ("Breite vorgeben", "Höhe vorgeben"), index=0)
+    eps_gitter = st.number_input("Freier Querschnitt des Gitters (Herstellerangabe)", value=0.65, key="eps_gitter_dim")
+    A_req_cm2 = A_gitter * 10000  # erforderliche freie Fläche in cm²
+
+    if dim_modus == "Breite vorgeben":
+        b_vor = st.number_input("Gewünschte Breite [mm]", value=400, step=10, key="b_vor")
+        if b_vor > 0 and eps_gitter > 0:
+            # Geometrische Fläche = A_req / eps_gitter, dann Höhe = geometr. Fläche / Breite (in cm)
+            geom_flaeche_cm2 = A_req_cm2 / eps_gitter
+            hoehe_cm = geom_flaeche_cm2 / (b_vor/10)  # Breite in cm
+            hoehe_mm = hoehe_cm * 10
+            st.write(f"**Ergebnis:** Breite = {b_vor} mm → benötigte Höhe = **{hoehe_mm:.0f} mm**")
+            st.caption(f"Geometrische Fläche = {geom_flaeche_cm2:.1f} cm² (davon {eps_gitter*100:.0f}% frei = {A_req_cm2:.1f} cm²)")
+    else:
+        h_vor = st.number_input("Gewünschte Höhe [mm]", value=150, step=10, key="h_vor")
+        if h_vor > 0 and eps_gitter > 0:
+            geom_flaeche_cm2 = A_req_cm2 / eps_gitter
+            breite_cm = geom_flaeche_cm2 / (h_vor/10)
+            breite_mm = breite_cm * 10
+            st.write(f"**Ergebnis:** Höhe = {h_vor} mm → benötigte Breite = **{breite_mm:.0f} mm**")
+            st.caption(f"Geometrische Fläche = {geom_flaeche_cm2:.1f} cm² (davon {eps_gitter*100:.0f}% frei = {A_req_cm2:.1f} cm²)")
 
     st.subheader("Türspalthöhe bei typischen Türbreiten")
     breiten_cm = [56.1, 68.6, 81.1, 93.6]
@@ -362,17 +388,6 @@ with tab9:
     for label, breite in zip(labels, breiten_cm):
         spalthoehe = A_tuer * 10000 / breite
         st.write(f"**{label}**: {spalthoehe:.2f} cm Spalthöhe erforderlich")
-
-    st.subheader("Überströmungsgitter dimensionieren")
-    gitter_b = st.number_input("Gitterbreite [mm]", value=400, key="gitter_b2")
-    gitter_h = st.number_input("Gitterhöhe [mm]", value=150, key="gitter_h2")
-    geom_flaeche = gitter_b * gitter_h / 100  # cm²
-    freier_q = st.number_input("Freier Querschnitt des Gitters (Hersteller)", value=0.65)
-    eff_flaeche = geom_flaeche * freier_q
-    if eff_flaeche >= A_gitter * 10000:
-        st.success(f"Eff. Fläche {eff_flaeche:.1f} cm² ≥ {A_gitter*10000:.1f} cm² – ausreichend")
-    else:
-        st.error(f"Eff. Fläche {eff_flaeche:.1f} cm² < {A_gitter*10000:.1f} cm² – **Gitter zu klein!**")
 
 # ================== TAB 10: Akustik ==================
 with tab10:
