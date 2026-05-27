@@ -1,313 +1,60 @@
-import streamlit as st
-import plotly.graph_objects as go
-import numpy as np
-
-st.set_page_config(page_title="Thermodynamik-Rechner", layout="wide")
-st.title("Thermodynamischer Leistungsrechner & Lüftungsplaner")
-
-# ---------- Alle Tabs definieren ----------
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
-    "🔧 Leistungsberechnung",
-    "🌡️ Lüftung & hx-Diagramm",
-    "📚 Glossar",
-    "📐 Herleitung Konstanten",
-    "📋 Luftmengen DIN EN 16798",
-    "💨 Druckverlustrechner",
-    "📏 Kanal-Dimensionierung",
-    "🌬️ Wetterschutzgitter",
-    "🚪 Überströmflächen",
-    "🔊 Akustik"
-])
-
-# ================== TAB 1: Leistungsberechnung ==================
-with tab1:
-    st.header("Heizlast- und Leistungsberechnungen")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Luft")
-        V_luft = st.number_input("Volumenstrom Luft [m³/h]", value=150.0)
-        deltaT_luft = st.number_input("Temperaturdifferenz Luft [K]", value=25.0)
-        Q_luft = V_luft * deltaT_luft * 0.34
-        st.metric("Heizleistung Luft", f"{Q_luft:.0f} W")
-    with col2:
-        st.subheader("Wasser")
-        V_wasser = st.number_input("Volumenstrom Wasser [m³/h]", value=2.5)
-        deltaT_wasser = st.number_input("Spreizung Wasser [K]", value=10.0)
-        Q_wasser = V_wasser * deltaT_wasser * 1.163
-        st.metric("Übertragene Leistung Wasser", f"{Q_wasser:.2f} kW")
-
-    st.subheader("Lufterhitzer-Kopplung")
-    V_luft_heiz = st.number_input("Gewünschte Luftmenge Lufterhitzer [m³/h]", value=1500.0)
-    deltaT_luft_heiz = st.number_input("Temperaturhub Luft [K]", value=22.0)
-    deltaT_ww = st.number_input("Spreizung Heizwasser [K]", value=20.0)
-    Q_heiz = V_luft_heiz * deltaT_luft_heiz * 0.34 / 1000
-    m_wasser = (Q_heiz / 1.163 / deltaT_ww) * 1000
-    st.write(f"**Erforderliche Heizleistung:** {Q_heiz:.1f} kW")
-    st.write(f"**Bevorzugter Wassermassenstrom:** {m_wasser:.1f} kg/h")
-
-# ================== TAB 2: Lüftung & hx-Diagramm ==================
-with tab2:
-    st.header("Zustandsberechnung und Lüftungsempfehlung")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Raumluft")
-        t_raum = st.number_input("Temperatur Raum [°C]", value=23.5, key="t_raum")
-        phi_raum = st.slider("Relative Feuchte Raum [%]", 0, 100, 55, key="phi_raum")
-        v_raum = st.number_input("Volumenstrom Raum [m³/h]", value=100.0, key="v_raum")
-    with col2:
-        st.subheader("Außenluft")
-        t_aussen = st.number_input("Temperatur Außen [°C]", value=16.0, key="t_aussen")
-        phi_aussen = st.slider("Relative Feuchte Außen [%]", 0, 100, 85, key="phi_aussen")
-        v_aussen = st.number_input("Volumenstrom Außen [m³/h]", value=100.0, key="v_aussen")
-
-    # Berechnungen
-    def magnus_psat(t):
-        return 610.78 * np.exp((17.08085 * t) / (234.175 + t))
-    def x_aus_phi_t(phi, t):
-        psat = magnus_psat(t)
-        pd = phi / 100 * psat
-        return 622 * pd / (101325 - pd)
-    def enthalpie(t, x):
-        return 1.005 * t + x / 1000 * (2501 + 1.86 * t)
-
-    x_raum = x_aus_phi_t(phi_raum, t_raum)
-    x_aussen = x_aus_phi_t(phi_aussen, t_aussen)
-    h_raum = enthalpie(t_raum, x_raum)
-    h_aussen = enthalpie(t_aussen, x_aussen)
-
-    v_ges = v_raum + v_aussen
-    t_misch = (t_raum * v_raum + t_aussen * v_aussen) / v_ges if v_ges > 0 else 0
-    x_misch = (x_raum * v_raum + x_aussen * v_aussen) / v_ges if v_ges > 0 else 0
-    h_misch = (h_raum * v_raum + h_aussen * v_aussen) / v_ges if v_ges > 0 else 0
-
-    psat_misch = magnus_psat(t_misch)
-    pd_misch = x_misch * 101325 / (622 + x_misch)
-    phi_misch = (pd_misch / psat_misch) * 100 if psat_misch > 0 else 0
-
-    colA, colB = st.columns(2)
-    with colA:
-        st.subheader("Berechnete Zustandsgrößen")
-        st.write(f"Raumluft: x = {x_raum:.1f} g/kg, h = {h_raum:.1f} kJ/kg")
-        st.write(f"Außenluft: x = {x_aussen:.1f} g/kg, h = {h_aussen:.1f} kJ/kg")
-        st.write("---")
-        st.write(f"Mischluft: x = {x_misch:.1f} g/kg, h = {h_misch:.1f} kJ/kg")
-        st.write(f"Mischluft: Temperatur = {t_misch:.1f} °C")
-        st.write(f"Relative Feuchte Mischluft = {phi_misch:.1f} %")
-    with colB:
-        st.subheader("Lüftungsempfehlung (h-Regel)")
-        if t_aussen > 25:
-            st.error("❌ NICHT LÜFTEN – Behaglichkeitsgrenze überschritten (>25 °C)")
-        elif h_aussen < h_raum:
-            st.success("✅ LÜFTEN sinnvoll – Außenluft-Enthalpie niedriger")
-        else:
-            st.warning("❌ NICHT LÜFTEN – Außenluft-Enthalpie höher")
-        if phi_raum < 40:
-            st.info("Raumluft zu trocken (<40 %)")
-        elif phi_raum > 60:
-            st.info("Raumluft zu feucht (>60 %)")
-        else:
-            st.info("Raumluft im Behaglichkeitsbereich (40–60 %)")
-
-    # hx-Diagramm
-    st.subheader("Interaktives h,x-Diagramm")
-    t_range = np.linspace(-10, 50, 100)
-    x_sat = [x_aus_phi_t(100, t) for t in t_range]
-    phi_lines = [20, 40, 60, 80]
-    phi_data = {phi: [x_aus_phi_t(phi, t) for t in t_range] for phi in phi_lines}
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=x_sat, y=t_range, mode='lines', name='φ=100 %', line=dict(color='black', width=2)))
-    colors = ['lightblue', 'lightgreen', 'orange', 'red']
-    for idx, phi in enumerate(phi_lines):
-        fig.add_trace(go.Scatter(x=phi_data[phi], y=t_range, mode='lines',
-                                 name=f'φ={phi} %', line=dict(color=colors[idx], width=1, dash='dash')))
-    fig.add_trace(go.Scatter(x=[x_raum, x_aussen, x_misch],
-                             y=[t_raum, t_aussen, t_misch],
-                             mode='markers+text',
-                             name='Zustandspunkte',
-                             text=['Raum', 'Außen', 'Misch'],
-                             textposition='top center',
-                             marker=dict(size=10, color='red')))
-    fig.update_layout(title="Mollier h,x-Diagramm", xaxis_title="Wassergehalt x [g/kg]",
-                      yaxis_title="Temperatur [°C]", legend=dict(x=0.01, y=0.99))
-    st.plotly_chart(fig, use_container_width=True)
-
-# ================== TAB 3: Glossar ==================
-with tab3:
-    st.header("Thermodynamisches Glossar")
-    glossary = [
-        ("Spezifische Enthalpie (h)", "kJ/kg", "Gesamtenergieinhalt der feuchten Luft (sensibel + latent). Entscheidend für die h-Regel."),
-        ("h-Regel", "", "Fühlt sich die Luft draußen wärmer an? Dann nicht lüften. Technisch: h_außen < h_innen → Lüften sinnvoll."),
-        ("Sensible Wärme", "Wh/kW", "Fühlbare Wärme – Luft: 0,34 Wh/(m³·K)."),
-        ("Latente Wärme", "Wh/kW", "Im Wasserdampf gebundene Energie."),
-        ("Absoluter Wassergehalt (x)", "g/kg_tr", "Gramm Wasser pro kg trockener Luft."),
-        ("Relative Luftfeuchtigkeit (φ)", "%", "Behaglichkeit: 40–60 %."),
-    ]
-    for name, unit, desc in glossary:
-        st.subheader(name)
-        if unit:
-            st.caption(f"Einheit: {unit}")
-        st.write(desc)
-
-# ================== TAB 4: Herleitung ==================
-with tab4:
-    st.header("Herleitung der Konstanten 0,34 und 1,16")
-    st.subheader("Luft: 0,34 Wh/(m³·K)")
-    st.latex(r"\rho_{\text{Luft}} \cdot c_p = 1,2\,\text{kg/m}^3 \times 1,0\,\text{kJ/(kg·K)} = 1,2\,\text{kJ/(m}^3\text{·K)}")
-    st.latex(r"\frac{1,2\,\text{kJ/(m}^3\text{·K)}}{3,6\,\text{kJ/Wh}} \approx 0,34\,\text{Wh/(m}^3\text{·K)}")
-    st.subheader("Wasser: 1,163 kWh/(m³·K)")
-    st.latex(r"\rho_{\text{Wasser}} \cdot c_p = 1000\,\text{kg/m}^3 \times 4,18\,\text{kJ/(kg·K)} = 4180\,\text{kJ/(m}^3\text{·K)}")
-    st.latex(r"\frac{4180\,\text{kJ/(m}^3\text{·K)}}{3600\,\text{kJ/kWh}} \approx 1,16\,\text{kWh/(m}^3\text{·K)}")
-
-# ================== TAB 5: Luftmengen DIN EN 16798 ==================
-with tab5:
-    st.header("Außenluftraten nach DIN EN 16798-3")
-    col1, col2 = st.columns(2)
-    with col1:
-        laenge = st.number_input("Raumlänge [m]", value=10.0)
-        breite = st.number_input("Raumbreite [m]", value=6.0)
-    with col2:
-        personen = st.number_input("Personenanzahl", value=12)
-    flaeche = laenge * breite
-    st.write(f"Raumfläche: {flaeche:.1f} m²")
-    ida = {
-        "IDA 1 (Hohe Luftqualität)": (36, 7.2),
-        "IDA 2 (Mittlere Luftqualität)": (25, 5.4),
-        "IDA 3 (Mäßige Luftqualität)": (25, 2.5),
-        "IDA 4 (Niedrige Luftqualität)": (14, 1.1)
-    }
-    ergebnisse = {}
-    for kat, (qp, qb) in ida.items():
-        v_aussen = (personen * qp) + (flaeche * qb)
-        ergebnisse[kat] = v_aussen
-        st.write(f"{kat}: {v_aussen:.1f} m³/h")
-    st.session_state.ida3_volumen = ergebnisse.get("IDA 3 (Mäßige Luftqualität)", 450)
-
-# ================== TAB 6: Druckverlustrechner ==================
-with tab6:
-    st.header("Strang-Druckverlustrechner")
-    st.subheader("Komponenten (Menge eintragen)")
-    col1, col2 = st.columns(2)
-    mengen = {}
-    with col1:
-        mengen['kanal_meter'] = st.number_input("Kanalstrecke [m]", value=15, key="k1")
-        mengen['bsk'] = st.number_input("Brandschutzklappen", value=1, key="k2")
-        mengen['vav'] = st.number_input("Volumenstromregler", value=1, key="k3")
-        mengen['konstantregler'] = st.number_input("Konstantvolumenstromregler", value=0, key="k4")
-        mengen['kulissend'] = st.number_input("Kulissenschalldämpfer", value=1, key="k5")
-    with col2:
-        mengen['rohrsd'] = st.number_input("Rohrschalldämpfer", value=0, key="k6")
-        mengen['telefonsd'] = st.number_input("Telefonieschalldämpfer", value=2, key="k7")
-        mengen['bogen90'] = st.number_input("90°-Bogen", value=4, key="k8")
-        mengen['uebergang'] = st.number_input("Übergänge/Reduzierungen", value=2, key="k9")
-        mengen['t_durchgang'] = st.number_input("T-Stück Durchgang", value=1, key="k10")
-        mengen['t_abgang'] = st.number_input("T-Stück Abgang", value=1, key="k11")
-    dp_werte = {
-        'kanal_meter': 0.85, 'bsk': 10, 'vav': 25, 'konstantregler': 40,
-        'kulissend': 17.5, 'rohrsd': 8.5, 'telefonsd': 10, 'bogen90': 5,
-        'uebergang': 3.5, 't_durchgang': 6, 't_abgang': 11.5
-    }
-    with st.expander("Weitere Komponenten"):
-        mengen['nacherhitzer'] = st.number_input("Nacherhitzer", value=0, key="k12")
-        mengen['drallauslass'] = st.number_input("Drallauslass", value=2, key="k13")
-        mengen['weitwurfd'] = st.number_input("Weitwurfdüse", value=0, key="k14")
-        mengen['kanalgitter'] = st.number_input("Kanalgitter", value=0, key="k15")
-        mengen['gitter_schieber'] = st.number_input("Gitter mit Schieber", value=0, key="k16")
-        mengen['tellerventil_zu'] = st.number_input("Tellerventil Zuluft", value=0, key="k17")
-        mengen['tellerventil_ab'] = st.number_input("Tellerventil Abluft", value=0, key="k18")
-        mengen['drosselklappe'] = st.number_input("Drosselklappe", value=2, key="k19")
-        dp_werte.update({
-            'nacherhitzer': 20, 'drallauslass': 37.5, 'weitwurfd': 45,
-            'kanalgitter': 17.5, 'gitter_schieber': 25,
-            'tellerventil_zu': 25, 'tellerventil_ab': 17.5, 'drosselklappe': 12.5
-        })
-    dp_sum = sum(mengen[k] * dp_werte[k] for k in mengen if k in dp_werte)
-    sicherheit = dp_sum * 0.15
-    st.metric("Netto-Druckverlust", f"{dp_sum:.1f} Pa")
-    st.metric("+15% Sicherheitszuschlag", f"{sicherheit:.1f} Pa")
-    st.metric("Empfohlener Mindest-Anlagendruck", f"{dp_sum + sicherheit:.1f} Pa")
-
-# ================== TAB 7: Kanal-Dimensionierung ==================
-with tab7:
-    st.header("Kanal-Dimensionierung (Kontinuitätsgleichung)")
-    if 'ida3_volumen' in st.session_state:
-        V_kan = st.number_input("Volumenstrom [m³/h]", value=st.session_state.ida3_volumen)
-    else:
-        V_kan = st.number_input("Volumenstrom [m³/h]", value=450.0)
-    v = st.number_input("Ziel-Geschwindigkeit [m/s]", value=5.0)
-    A = (V_kan/3600) / v
-    st.write(f"Erforderliche Kanalfläche: {A:.4f} m²")
-    # Quadratisch
-    seite = (A**0.5) * 1000
-    st.write(f"Quadratisch: {seite:.0f} x {seite:.0f} mm, v = {V_kan/((seite/1000)**2 * 3600):.2f} m/s")
-    # 1:3
-    h_13 = (A/3)**0.5 * 1000
-    b_13 = h_13 * 3
-    st.write(f"1:3: {h_13:.0f} x {b_13:.0f} mm, v = {V_kan/((h_13/1000)*(b_13/1000)*3600):.2f} m/s")
-    # Individuell
-    h_ind = st.number_input("Höhe [mm]", value=200)
-    if h_ind > 0:
-        b_ind = (A / (h_ind/1000)) * 1000
-        st.write(f"Individuell: {h_ind:.0f} x {b_ind:.0f} mm, v = {V_kan/((h_ind/1000)*(b_ind/1000)*3600):.2f} m/s")
-    # Rund
-    durchmesser = ((4*A)/np.pi)**0.5 * 1000
-    st.write(f"Rund: Ø {durchmesser:.0f} mm, v = {V_kan/(np.pi*(durchmesser/1000)**2/4 * 3600):.2f} m/s")
-
-# ================== TAB 8: Wetterschutzgitter ==================
-with tab8:
-    st.header("Wetterschutzgitter (WSG) Auslegung")
-    if 'ida3_volumen' in st.session_state:
-        V_wsg = st.number_input("Volumenstrom [m³/h]", value=st.session_state.ida3_volumen, key="wsg_v")
-    else:
-        V_wsg = st.number_input("Volumenstrom [m³/h]", value=450.0, key="wsg_v")
-    eps = st.number_input("Freier Querschnitt ε", value=0.6)
-    v_max = 2.5
-    hoehe = st.number_input("Höhe [mm]", value=500)
-    if hoehe > 0:
-        breite = (((V_wsg/3600) / 2.3) / eps) / (hoehe/1000) * 1000
-        st.write(f"Für v=2,3 m/s: Breite = {breite:.0f} mm")
-    man_h = st.number_input("Manuelle Höhe [mm]", value=500, key="man_h")
-    man_b = st.number_input("Manuelle Breite [mm]", value=1000, key="man_b")
-    A_frei = (man_h/1000) * (man_b/1000) * eps
-    v_eff = (V_wsg/3600) / A_frei if A_frei > 0 else float('inf')
-    if v_eff > v_max:
-        st.error(f"v_eff = {v_eff:.2f} m/s – KRITISCH! Regeneintriebsgefahr!")
-    else:
-        st.success(f"v_eff = {v_eff:.2f} m/s – OK.")
-
 # ================== TAB 9: Überströmflächen ==================
 with tab9:
-    st.header("Überströmflächen-Berechnung")
-    V_ue = st.number_input("Volumenstrom [m³/h]", value=100, key="ue_v")
-    dp = st.number_input("Druckdifferenz [Pa]", value=2)
-    alpha_tuer = 0.6
-    alpha_gitter = 0.72
-    rho = 1.2
+    st.header("Überströmflächen-Berechnung nach DIN 1946‑6")
+    st.markdown("**Physikalische Grundlage:** Vereinfachte Bernoulli‑Gleichung für eine Blende")
+    st.latex(r"\dot{V} = \alpha \cdot A \cdot \sqrt{\frac{2 \cdot \Delta p}{\rho}}")
+    st.latex(r"A = \frac{\dot{V}}{\alpha \cdot \sqrt{\frac{2 \cdot \Delta p}{\rho}}}")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        V_ue = st.number_input("Volumenstrom [m³/h]", value=100, key="ue_v")
+    with col2:
+        rho = 1.2  # kg/m³
+        st.write("Luftdichte ρ = 1,2 kg/m³")
+    
+    st.subheader("Zulässige Druckdifferenz Δp (wichtiger Auslegungswert!)")
+    dp_wahl = st.radio(
+        "Wählen Sie die passende Druckdifferenz:",
+        ("2 Pa – Standard (DIN 1946‑6, freie Lüftung Wohnungsbau)",
+         "4 Pa – erhöhte Anforderung (z. B. Abluftanlagen)"),
+        index=0
+    )
+    dp = 2.0 if "2 Pa" in dp_wahl else 4.0
+    st.caption(f"Verwendetes Δp = **{dp} Pa**")
+    
+    st.markdown("**Durchflusskennzahlen α**")
+    alpha_tuer = 0.60  # scharfkantiger Spalt
+    alpha_gitter = 0.72  # abgerundetes Gitter
+    st.write(f"Türspalt (scharfkantig): α = {alpha_tuer}")
+    st.write(f"Überströmungsgitter: α = {alpha_gitter} (günstiger, daher weniger Fläche nötig)")
+    
+    # Berechnung
     A_tuer = (V_ue/3600) / (alpha_tuer * np.sqrt(2*dp/rho))
     A_gitter = (V_ue/3600) / (alpha_gitter * np.sqrt(2*dp/rho))
-    st.write(f"Freie Fläche Türspalt: {A_tuer*10000:.1f} cm²")
-    st.write(f"Freie Fläche Ü-Gitter: {A_gitter*10000:.1f} cm² (≈ {100*(A_tuer-A_gitter)/A_tuer:.0f}% weniger)")
-    st.subheader("Türspalthöhe bei Standard-Türbreiten")
+    
+    st.subheader("Ergebnisse")
+    colA, colB = st.columns(2)
+    with colA:
+        st.metric("Freie Fläche Türspalt", f"{A_tuer*10000:.1f} cm²")
+    with colB:
+        st.metric("Freie Fläche Ü‑Gitter", f"{A_gitter*10000:.1f} cm²",
+                  delta=f"{-100*(A_tuer-A_gitter)/A_tuer:.0f}% weniger")
+    
+    st.subheader("Türspalthöhe bei typischen Türbreiten")
     breiten_cm = [56.1, 68.6, 81.1, 93.6]
-    labels = ["625 mm (schmal)", "750 mm", "875 mm", "1000 mm (breit)"]
+    labels = ["625 mm (schmal)", "750 mm", "875 mm", "1000 mm (breit)"]
     for label, breite in zip(labels, breiten_cm):
         spalthoehe = A_tuer * 10000 / breite
-        st.write(f"{label}: {spalthoehe:.2f} cm Spalthöhe")
-    st.subheader("Überströmungsgitter prüfen")
-    gitter_b = st.number_input("Gitterbreite [mm]", value=400, key="gitter_b")
-    gitter_h = st.number_input("Gitterhöhe [mm]", value=150, key="gitter_h")
+        st.write(f"**{label}**: {spalthoehe:.2f} cm Spalthöhe erforderlich")
+    st.caption("Bei zu großem Spalt → Ü‑Gitter einbauen oder größeren α‑Wert nutzen.")
+    
+    st.subheader("Überströmungsgitter dimensionieren")
+    gitter_b = st.number_input("Gitterbreite [mm]", value=400, key="gitter_b2")
+    gitter_h = st.number_input("Gitterhöhe [mm]", value=150, key="gitter_h2")
     geom_flaeche = gitter_b * gitter_h / 100  # cm²
-    freier_q = 0.65
+    freier_q = st.number_input("Freier Querschnitt des Gitters (Herstellerangabe)", value=0.65)
     eff_flaeche = geom_flaeche * freier_q
     if eff_flaeche >= A_gitter * 10000:
-        st.success(f"Eff. Fläche {eff_flaeche:.1f} cm² ≥ {A_gitter*10000:.1f} cm² – OK")
+        st.success(f"Eff. Fläche {eff_flaeche:.1f} cm² ≥ {A_gitter*10000:.1f} cm² – ausreichend")
     else:
-        st.error(f"Eff. Fläche {eff_flaeche:.1f} cm² < {A_gitter*10000:.1f} cm² – zu klein")
-
-# ================== TAB 10: Akustik ==================
-with tab10:
-    st.header("Akustischer Abstandsrechner")
-    L_wA = st.number_input("Schallleistungspegel Gitter [dB(A)]", value=56)
-    r = st.number_input("Abstand [m]", value=15)
-    L_p = L_wA - 20 * np.log10(r) - 8
-    st.write(f"Schalldruckpegel beim Nachbarn: {L_p:.1f} dB(A)")
+        st.error(f"Eff. Fläche {eff_flaeche:.1f} cm² < {A_gitter*10000:.1f} cm² – **Gitter zu klein!**")
