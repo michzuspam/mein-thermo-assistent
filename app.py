@@ -22,7 +22,6 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
 # ================== TAB 1: Leistungsberechnung ==================
 with tab1:
     st.header("Heizlast- und Leistungsberechnungen")
-
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Luft")
@@ -30,10 +29,8 @@ with tab1:
         deltaT_luft = st.number_input("Temperaturdifferenz Luft [K]", value=25.0)
         Q_luft = V_luft * deltaT_luft * 0.34
         st.metric("Heizleistung Luft", f"{Q_luft:.0f} W")
-        # Formel direkt unter der Metrik
         st.latex(r"\dot{Q}_{Luft} = \dot{V} \cdot \Delta T \cdot 0{,}34")
         st.caption(f"= {V_luft} · {deltaT_luft} · 0,34 = {Q_luft:.0f} W")
-
     with col2:
         st.subheader("Wasser")
         V_wasser = st.number_input("Volumenstrom Wasser [m³/h]", value=2.5)
@@ -42,7 +39,6 @@ with tab1:
         st.metric("Übertragene Leistung Wasser", f"{Q_wasser:.2f} kW")
         st.latex(r"\dot{Q}_{Wasser} = \dot{V} \cdot \Delta T \cdot 1{,}163")
         st.caption(f"= {V_wasser} · {deltaT_wasser} · 1,163 = {Q_wasser:.2f} kW")
-
     st.subheader("Lufterhitzer-Kopplung")
     col3, col4 = st.columns(2)
     with col3:
@@ -50,10 +46,8 @@ with tab1:
     with col4:
         deltaT_luft_heiz = st.number_input("Temperaturhub Luft [K]", value=22.0)
     deltaT_ww = st.number_input("Spreizung Heizwasser [K]", value=20.0)
-
     Q_heiz = V_luft_heiz * deltaT_luft_heiz * 0.34 / 1000
     m_wasser = (Q_heiz / 1.163 / deltaT_ww) * 1000
-
     st.write(f"**Erforderliche Heizleistung:** {Q_heiz:.1f} kW")
     st.latex(r"\dot{Q} = \frac{\dot{V}_{Luft} \cdot \Delta T_{Luft} \cdot 0{,}34}{1000}")
     st.write(f"**Bevorzugter Wassermassenstrom:** {m_wasser:.1f} kg/h")
@@ -263,7 +257,7 @@ with tab7:
 
 # ================== TAB 8: Wetterschutzgitter ==================
 with tab8:
-    st.header("Wetterschutzgitter (WSG) – Auslegung & Strömungsgeschwindigkeit")
+    st.header("🌬️ Wetterschutzgitter (WSG) – Auslegung & Strömungsgeschwindigkeit")
     st.markdown("**Formel:** $v_{eff} = \\frac{\\dot{V}}{B \\cdot H \\cdot \\varepsilon}$")
     if 'ida3_volumen' in st.session_state:
         V_wsg = st.number_input("Volumenstrom [m³/h]", value=st.session_state.ida3_volumen, key="wsg_v")
@@ -303,9 +297,10 @@ with tab8:
 
 # ================== TAB 9: Überströmflächen ==================
 with tab9:
-    st.header("Überströmflächen-Berechnung (Türspalt & Gitter)")
+    st.header("🚪 Überströmflächen-Berechnung (Türspalt & Gitter)")
     st.markdown("**Physikalische Grundlage:** Vereinfachte Bernoulli-Gleichung")
-    st.latex(r"\dot{V} = \alpha \cdot A \cdot \sqrt{\frac{2 \Delta p}{\rho}} \quad \Rightarrow \quad A = \frac{\dot{V}}{\alpha \cdot \sqrt{2 \Delta p / \rho}}")
+    st.latex(r"\dot{V} = \alpha \cdot A \cdot \sqrt{\frac{2 \Delta p}{\rho}}")
+    st.latex(r"A = \frac{\dot{V}}{\alpha \cdot \sqrt{2 \Delta p / \rho}}")
     st.caption("α = Durchflussbeiwert (Türspalt ≈ 0,6; Gitter ≈ 0,72)")
 
     col1, col2 = st.columns(2)
@@ -327,41 +322,39 @@ with tab9:
     alpha_gitter = 0.72
     st.write(f"α Türspalt = {alpha_tuer},  α Gitter = {alpha_gitter}")
 
-    # Berechnung mit np.sqrt – np ist durch Import verfügbar
+    # Berechnung der freien Flächen
     A_tuer = (V_ue/3600) / (alpha_tuer * np.sqrt(2*dp/rho))
     A_gitter = (V_ue/3600) / (alpha_gitter * np.sqrt(2*dp/rho))
 
-    # Geschwindigkeitsberechnung für die Praxis-Prüfung
+    # Resultierende Geschwindigkeiten
     v_tuer = (V_ue/3600) / A_tuer if A_tuer > 0 else 0
     v_gitter = (V_ue/3600) / A_gitter if A_gitter > 0 else 0
 
-    st.subheader("Ergebnisse")
+    st.subheader("Ergebnis: Benötigter freier Querschnitt")
     colA, colB = st.columns(2)
     with colA:
         st.metric("Freie Fläche Türspalt", f"{A_tuer*10000:.1f} cm²")
         st.caption(f"→ resultierende Geschwindigkeit: **{v_tuer:.2f} m/s**")
+        if v_tuer <= 1.5:
+            st.success("✅ ≤ 1,5 m/s – Komfortgrenze eingehalten")
+        else:
+            st.warning(f"⚠️ {v_tuer:.2f} m/s > 1,5 m/s – Gefahr von Pfeifgeräuschen!")
     with colB:
         st.metric("Freie Fläche Ü‑Gitter", f"{A_gitter*10000:.1f} cm²",
                   delta=f"{-100*(A_tuer-A_gitter)/A_tuer:.0f}% weniger")
         st.caption(f"→ resultierende Geschwindigkeit: **{v_gitter:.2f} m/s**")
+        if v_gitter <= 1.0:
+            st.success("✅ ≤ 1,0 m/s – akustisch neutral")
+        else:
+            st.warning(f"⚠️ {v_gitter:.2f} m/s > 1,0 m/s – kann hörbar sein!")
 
-    st.subheader("Praxis-Grenzwerte für die Strömungsgeschwindigkeit")
-    st.markdown("""
-    | Bauteil               | Max. empf. Geschwindigkeit | Begründung                         |
-    |-----------------------|----------------------------|------------------------------------|
-    | **Türspalt**          | ≤ **1,5 m/s**              | Komfortgrenze (Pfeifgeräusche)     |
-    | **Überströmgitter**   | ≤ **1,0 m/s**              | akustisch neutral (ca. 1 Pa)       |
-    """)
-
-    # Prüfhinweise
-    if v_tuer > 1.5:
-        st.warning(f"⚠️ Türspalt-Geschwindigkeit {v_tuer:.2f} m/s überschreitet 1,5 m/s – Gefahr von Pfeifgeräuschen!")
-    else:
-        st.success(f"✅ Türspalt-Geschwindigkeit {v_tuer:.2f} m/s ≤ 1,5 m/s – in Ordnung.")
-    if v_gitter > 1.0:
-        st.warning(f"⚠️ Gitter-Geschwindigkeit {v_gitter:.2f} m/s überschreitet 1,0 m/s – kann hörbar sein!")
-    else:
-        st.success(f"✅ Gitter-Geschwindigkeit {v_gitter:.2f} m/s ≤ 1,0 m/s – akustisch unauffällig.")
+    st.markdown("---")
+    st.info(
+        "**Maximal empfohlene Strömungsgeschwindigkeiten:**\n"
+        "- **Türspalt**: ≤ **1,5 m/s** – höhere Geschwindigkeiten können Pfeifgeräusche verursachen.\n"
+        "- **Überströmgitter**: ≤ **1,0 m/s** – für einen akustisch neutralen Betrieb (ca. 1 Pa Druckabfall).\n"
+        "- Diese Grenzwerte sind unabhängig von der Norm; sie stellen die Komfortgrenze dar."
+    )
 
     st.subheader("Türspalthöhe bei typischen Türbreiten")
     breiten_cm = [56.1, 68.6, 81.1, 93.6]
@@ -373,7 +366,7 @@ with tab9:
     st.subheader("Überströmungsgitter dimensionieren")
     gitter_b = st.number_input("Gitterbreite [mm]", value=400, key="gitter_b2")
     gitter_h = st.number_input("Gitterhöhe [mm]", value=150, key="gitter_h2")
-    geom_flaeche = gitter_b * gitter_h / 100
+    geom_flaeche = gitter_b * gitter_h / 100  # cm²
     freier_q = st.number_input("Freier Querschnitt des Gitters (Hersteller)", value=0.65)
     eff_flaeche = geom_flaeche * freier_q
     if eff_flaeche >= A_gitter * 10000:
