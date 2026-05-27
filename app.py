@@ -181,7 +181,6 @@ with tab5:
     flaeche = laenge * breite
     st.write(f"Raumfläche: {flaeche:.1f} m²")
 
-    # Tabelle mit den IDA-Kategorien und den spezifischen Werten
     st.subheader("IDA-Kategorien und spezifische Volumenströme")
     ida_data = [
         ("IDA 1", "Hohe Raumluftqualität", 36, 7.2),
@@ -189,13 +188,11 @@ with tab5:
         ("IDA 3", "Mäßige Raumluftqualität", 25, 2.5),
         ("IDA 4", "Niedrige Raumluftqualität", 14, 1.1)
     ]
-    # Tabelle als Markdown
     st.markdown("| Kategorie | Beschreibung | qp (m³/h/Person) | qB (m³/(h·m²)) |")
     st.markdown("|-----------|--------------|-------------------|----------------|")
     for kat, desc, qp, qb in ida_data:
         st.markdown(f"| {kat} | {desc} | {qp} | {qb} |")
 
-    # Ergebnisse für jede Kategorie dynamisch berechnen
     st.subheader("Berechneter Außenluftbedarf für Ihre Eingabe")
     ergebnisse = {}
     for kat, desc, qp, qb in ida_data:
@@ -203,7 +200,6 @@ with tab5:
         ergebnisse[kat] = V_aussen
         st.write(f"**{kat} ({desc}):** {V_aussen:.1f} m³/h  (Rechnung: {personen}·{qp} + {flaeche:.1f}·{qb})")
 
-    # Standardwert für andere Tabs (IDA 3)
     st.session_state.ida3_volumen = ergebnisse["IDA 3"]
 
 # ================== TAB 6: Druckverlustrechner ==================
@@ -244,11 +240,61 @@ with tab6:
             'kanalgitter': 17.5, 'gitter_schieber': 25,
             'tellerventil_zu': 25, 'tellerventil_ab': 17.5, 'drosselklappe': 12.5
         })
+
     dp_sum = sum(mengen[k] * dp_werte[k] for k in mengen if k in dp_werte)
     sicherheit = dp_sum * 0.15
     st.metric("Netto-Druckverlust", f"{dp_sum:.1f} Pa")
     st.metric("+15% Sicherheitszuschlag", f"{sicherheit:.1f} Pa")
     st.metric("Empfohlener Mindest-Anlagendruck", f"{dp_sum + sicherheit:.1f} Pa")
+
+    # Detailübersicht mit typischen Bereichen
+    with st.expander("📋 Detailaufstellung der Komponenten"):
+        # Bereichsangaben (min-max) aus der Praxis
+        bereiche = {
+            'kanal_meter': ("0,5 – 1,2", "pro Meter"),
+            'bsk': ("5 – 15", "pro Stück"),
+            'vav': ("15 – 35", "pro Stück"),
+            'konstantregler': ("30 – 50", "pro Stück"),
+            'kulissend': ("10 – 25", "pro Stück"),
+            'rohrsd': ("5 – 12", "pro Stück"),
+            'telefonsd': ("5 – 15", "pro Stück"),
+            'bogen90': ("3 – 7", "pro Stück"),
+            'uebergang': ("2 – 5", "pro Stück"),
+            't_durchgang': ("4 – 8", "pro Stück"),
+            't_abgang': ("8 – 15", "pro Stück"),
+            'nacherhitzer': ("10 – 30", "pro Stück"),
+            'drallauslass': ("25 – 50", "pro Stück"),
+            'weitwurfd': ("30 – 60", "pro Stück"),
+            'kanalgitter': ("10 – 25", "pro Stück"),
+            'gitter_schieber': ("15 – 35", "pro Stück"),
+            'tellerventil_zu': ("15 – 35", "pro Stück"),
+            'tellerventil_ab': ("10 – 25", "pro Stück"),
+            'drosselklappe': ("+5 – 20", "pro Stück")
+        }
+        # Namen für die Anzeige
+        namen = {
+            'kanal_meter': "Kanalstrecke", 'bsk': "Brandschutzklappe", 'vav': "Volumenstromregler",
+            'konstantregler': "Konstantvolumenstromregler", 'kulissend': "Kulissenschalldämpfer",
+            'rohrsd': "Rohrschalldämpfer", 'telefonsd': "Telefonieschalldämpfer",
+            'bogen90': "90°-Bogen", 'uebergang': "Übergang/Reduzierung",
+            't_durchgang': "T-Stück (Durchgang)", 't_abgang': "T-Stück (Abgang)",
+            'nacherhitzer': "Nacherhitzer", 'drallauslass': "Drallauslass",
+            'weitwurfd': "Weitwurfdüse", 'kanalgitter': "Kanalgitter",
+            'gitter_schieber': "Gitter mit Schieber", 'tellerventil_zu': "Tellerventil Zuluft",
+            'tellerventil_ab': "Tellerventil Abluft", 'drosselklappe': "Drosselklappe"
+        }
+
+        st.markdown("| Komponente | Typischer Bereich (Pa) | Rechenwert (Pa) | Menge | Δp (Pa) |")
+        st.markdown("|------------|------------------------|-----------------|-------|---------|")
+        for key in mengen:
+            if key in dp_werte and mengen[key] > 0:
+                bereich_str = bereiche.get(key, ("–", ""))[0]
+                dp_einzel = mengen[key] * dp_werte[key]
+                st.markdown(f"| {namen.get(key, key)} | {bereich_str} | {dp_werte[key]} | {mengen[key]} | {dp_einzel:.1f} |")
+            elif key in dp_werte and mengen[key] == 0:
+                # Trotzdem anzeigen, aber Menge 0
+                bereich_str = bereiche.get(key, ("–", ""))[0]
+                st.markdown(f"| {namen.get(key, key)} | {bereich_str} | {dp_werte[key]} | 0 | 0 |")
 
 # ================== TAB 7: Kanal-Dimensionierung ==================
 with tab7:
@@ -320,8 +366,7 @@ with tab8:
 with tab9:
     st.header("🚪 Überströmflächen-Berechnung (Türspalt & Gitter)")
     st.markdown("**Physikalische Grundlage:** Vereinfachte Bernoulli-Gleichung")
-    st.latex(r"\dot{V} = \alpha \cdot A \cdot \sqrt{\frac{2 \Delta p}{\rho}}")
-    st.latex(r"A = \frac{\dot{V}}{\alpha \cdot \sqrt{2 \Delta p / \rho}}")
+    st.latex(r"\dot{V} = \alpha \cdot A \cdot \sqrt{\frac{2 \Delta p}{\rho}} \quad \text{oder} \quad \dot{V} = A \cdot v")
     st.caption("α = Durchflussbeiwert (Türspalt ≈ 0,6; Gitter ≈ 0,72)")
 
     col1, col2 = st.columns(2)
@@ -331,57 +376,78 @@ with tab9:
         rho = 1.2
         st.write(f"Luftdichte ρ = {rho} kg/m³")
 
-    st.subheader("Zulässige Druckdifferenz Δp (nach DIN 1946-6)")
-    dp_wahl = st.radio(
-        "Lage des Gebäudes:",
-        ("Windschwach (Standard) → Δp = 2 Pa", "Windstark (exponiert) → Δp = 4 Pa"),
+    # Auswahl der Berechnungsmethode
+    methode = st.radio(
+        "Berechnungsmethode:",
+        ("Über Druckdifferenz (Δp, DIN 1946-6)", "Über Strömungsgeschwindigkeit (v)"),
         index=0
     )
-    dp = 2.0 if "2 Pa" in dp_wahl else 4.0
-    st.caption(f"Auslegungs-Druckdifferenz: **{dp} Pa**")
 
-    alpha_tuer = 0.60
-    alpha_gitter = 0.72
-    st.write(f"α Türspalt = {alpha_tuer},  α Gitter = {alpha_gitter}")
+    if methode == "Über Druckdifferenz (Δp, DIN 1946-6)":
+        st.subheader("Zulässige Druckdifferenz Δp (nach DIN 1946-6)")
+        dp_wahl = st.radio(
+            "Lage des Gebäudes:",
+            ("Windschwach (Standard) → Δp = 2 Pa", "Windstark (exponiert) → Δp = 4 Pa"),
+            index=0
+        )
+        dp = 2.0 if "2 Pa" in dp_wahl else 4.0
+        st.caption(f"Auslegungs-Druckdifferenz: **{dp} Pa**")
 
-    A_tuer = (V_ue/3600) / (alpha_tuer * np.sqrt(2*dp/rho))
-    A_gitter = (V_ue/3600) / (alpha_gitter * np.sqrt(2*dp/rho))
+        alpha_tuer = 0.60
+        alpha_gitter = 0.72
+        st.write(f"α Türspalt = {alpha_tuer},  α Gitter = {alpha_gitter}")
 
-    v_tuer = (V_ue/3600) / A_tuer if A_tuer > 0 else 0
-    v_gitter = (V_ue/3600) / A_gitter if A_gitter > 0 else 0
+        A_tuer = (V_ue/3600) / (alpha_tuer * np.sqrt(2*dp/rho))
+        A_gitter = (V_ue/3600) / (alpha_gitter * np.sqrt(2*dp/rho))
 
-    st.subheader("Ergebnis: Benötigter freier Querschnitt")
-    colA, colB = st.columns(2)
-    with colA:
-        st.metric("Freie Fläche Türspalt", f"{A_tuer*10000:.1f} cm²")
-        st.caption(f"→ resultierende Geschwindigkeit: **{v_tuer:.2f} m/s**")
-        if v_tuer <= 1.5:
-            st.success("✅ ≤ 1,5 m/s – Komfortgrenze eingehalten")
+        v_tuer = (V_ue/3600) / A_tuer if A_tuer > 0 else 0
+        v_gitter = (V_ue/3600) / A_gitter if A_gitter > 0 else 0
+
+        st.subheader("Ergebnis: Benötigter freier Querschnitt")
+        colA, colB = st.columns(2)
+        with colA:
+            st.metric("Freie Fläche Türspalt", f"{A_tuer*10000:.1f} cm²")
+            st.caption(f"→ resultierende Geschwindigkeit: **{v_tuer:.2f} m/s**")
+            if v_tuer <= 1.5:
+                st.success("✅ ≤ 1,5 m/s – Komfortgrenze eingehalten")
+            else:
+                st.warning(f"⚠️ {v_tuer:.2f} m/s > 1,5 m/s – Gefahr von Pfeifgeräuschen!")
+        with colB:
+            st.metric("Freie Fläche Ü‑Gitter", f"{A_gitter*10000:.1f} cm²",
+                      delta=f"{-100*(A_tuer-A_gitter)/A_tuer:.0f}% weniger")
+            st.caption(f"→ resultierende Geschwindigkeit: **{v_gitter:.2f} m/s**")
+            if v_gitter <= 1.0:
+                st.success("✅ ≤ 1,0 m/s – akustisch neutral")
+            else:
+                st.warning(f"⚠️ {v_gitter:.2f} m/s > 1,0 m/s – kann hörbar sein!")
+
+        A_req_cm2 = A_gitter * 10000   # Für die Dimensionierung das Gitter verwenden
+
+    else:  # Geschwindigkeitsmethode
+        st.subheader("Auslegung über Strömungsgeschwindigkeit")
+        v_ziel = st.number_input("Gewünschte effektive Geschwindigkeit [m/s]", value=1.5, step=0.1,
+                                 help="Empfohlen: 1,5 m/s für Türspalt, 1,0 m/s für Überströmgitter")
+        A_v = (V_ue/3600) / v_ziel   # m²
+        A_req_cm2 = A_v * 10000
+
+        st.metric("Erforderliche freie Fläche", f"{A_v*10000:.1f} cm²")
+        st.caption(f"Berechnung: A = V̇ / v = ({V_ue} m³/h) / (3600 · {v_ziel} m/s)")
+        if v_ziel <= 1.5:
+            st.success(f"v = {v_ziel} m/s ≤ 1,5 m/s – Komfortgrenze eingehalten")
         else:
-            st.warning(f"⚠️ {v_tuer:.2f} m/s > 1,5 m/s – Gefahr von Pfeifgeräuschen!")
-    with colB:
-        st.metric("Freie Fläche Ü‑Gitter", f"{A_gitter*10000:.1f} cm²",
-                  delta=f"{-100*(A_tuer-A_gitter)/A_tuer:.0f}% weniger")
-        st.caption(f"→ resultierende Geschwindigkeit: **{v_gitter:.2f} m/s**")
-        if v_gitter <= 1.0:
-            st.success("✅ ≤ 1,0 m/s – akustisch neutral")
-        else:
-            st.warning(f"⚠️ {v_gitter:.2f} m/s > 1,0 m/s – kann hörbar sein!")
+            st.warning(f"v = {v_ziel} m/s > 1,5 m/s – kann zu Geräuschen führen!")
 
-    st.info(
-        "**Maximal empfohlene Strömungsgeschwindigkeiten:**\n"
-        "- **Türspalt**: ≤ **1,5 m/s** – höhere Geschwindigkeiten können Pfeifgeräusche verursachen.\n"
-        "- **Überströmgitter**: ≤ **1,0 m/s** – für einen akustisch neutralen Betrieb (ca. 1 Pa Druckabfall)."
-    )
-
-    st.subheader("🔧 Überströmungsgitter dimensionieren")
+    # Dimensionierung (für Gitter/Öffnung)
+    st.subheader("🔧 Überströmöffnung dimensionieren")
     dim_modus = st.radio("Vorgabe wählen:", ("Breite vorgeben", "Höhe vorgeben"), index=0)
-    eps_gitter = st.number_input("Freier Querschnitt des Gitters (Hersteller)", value=0.65, key="eps_gitter_dim")
-    A_req_cm2 = A_gitter * 10000
+    eps_gitter = st.number_input("Freier Querschnitt des Gitters (Hersteller, 0…1)", value=0.65, key="eps_gitter_dim",
+                                 help="Für Türspalt ε=1 setzen")
+    if eps_gitter <= 0:
+        eps_gitter = 1.0  # Fallback
 
     if dim_modus == "Breite vorgeben":
         b_vor = st.number_input("Gewünschte Breite [mm]", value=400, step=10, key="b_vor")
-        if b_vor > 0 and eps_gitter > 0:
+        if b_vor > 0:
             geom_flaeche_cm2 = A_req_cm2 / eps_gitter
             hoehe_cm = geom_flaeche_cm2 / (b_vor/10)
             hoehe_mm = hoehe_cm * 10
@@ -389,7 +455,7 @@ with tab9:
             st.caption(f"Geometrische Fläche = {geom_flaeche_cm2:.1f} cm² (davon {eps_gitter*100:.0f}% frei = {A_req_cm2:.1f} cm²)")
     else:
         h_vor = st.number_input("Gewünschte Höhe [mm]", value=150, step=10, key="h_vor")
-        if h_vor > 0 and eps_gitter > 0:
+        if h_vor > 0:
             geom_flaeche_cm2 = A_req_cm2 / eps_gitter
             breite_cm = geom_flaeche_cm2 / (h_vor/10)
             breite_mm = breite_cm * 10
@@ -397,10 +463,14 @@ with tab9:
             st.caption(f"Geometrische Fläche = {geom_flaeche_cm2:.1f} cm² (davon {eps_gitter*100:.0f}% frei = {A_req_cm2:.1f} cm²)")
 
     st.subheader("Türspalthöhe bei typischen Türbreiten")
+    if methode == "Über Druckdifferenz (Δp, DIN 1946-6)":
+        A_spalt = A_tuer * 10000
+    else:
+        A_spalt = A_req_cm2
     breiten_cm = [56.1, 68.6, 81.1, 93.6]
     labels = ["625 mm (schmal)", "750 mm", "875 mm", "1000 mm (breit)"]
     for label, breite in zip(labels, breiten_cm):
-        spalthoehe = A_tuer * 10000 / breite
+        spalthoehe = A_spalt / breite
         st.write(f"**{label}**: {spalthoehe:.2f} cm Spalthöhe erforderlich")
 
 # ================== TAB 10: Akustik ==================
