@@ -168,6 +168,10 @@ with tab4:
 # ================== TAB 5: Luftmengen DIN EN 16798 ==================
 with tab5:
     st.header("Außenluftraten nach DIN EN 16798-3")
+    st.markdown("**Formel (Kombinationsverfahren):**")
+    st.latex(r"V_{ges} = (n \cdot q_p) + (A \cdot q_B)")
+    st.caption("n = Personenanzahl, q_p = Volumenstrom pro Person, A = Raumfläche, q_B = flächenbezogener Volumenstrom")
+
     col1, col2 = st.columns(2)
     with col1:
         laenge = st.number_input("Raumlänge [m]", value=10.0)
@@ -176,18 +180,31 @@ with tab5:
         personen = st.number_input("Personenanzahl", value=12)
     flaeche = laenge * breite
     st.write(f"Raumfläche: {flaeche:.1f} m²")
-    ida = {
-        "IDA 1 (Hohe Luftqualität)": (36, 7.2),
-        "IDA 2 (Mittlere Luftqualität)": (25, 5.4),
-        "IDA 3 (Mäßige Luftqualität)": (25, 2.5),
-        "IDA 4 (Niedrige Luftqualität)": (14, 1.1)
-    }
+
+    # Tabelle mit den IDA-Kategorien und den spezifischen Werten
+    st.subheader("IDA-Kategorien und spezifische Volumenströme")
+    ida_data = [
+        ("IDA 1", "Hohe Raumluftqualität", 36, 7.2),
+        ("IDA 2", "Mittlere Raumluftqualität", 25, 5.4),
+        ("IDA 3", "Mäßige Raumluftqualität", 25, 2.5),
+        ("IDA 4", "Niedrige Raumluftqualität", 14, 1.1)
+    ]
+    # Tabelle als Markdown
+    st.markdown("| Kategorie | Beschreibung | qp (m³/h/Person) | qB (m³/(h·m²)) |")
+    st.markdown("|-----------|--------------|-------------------|----------------|")
+    for kat, desc, qp, qb in ida_data:
+        st.markdown(f"| {kat} | {desc} | {qp} | {qb} |")
+
+    # Ergebnisse für jede Kategorie dynamisch berechnen
+    st.subheader("Berechneter Außenluftbedarf für Ihre Eingabe")
     ergebnisse = {}
-    for kat, (qp, qb) in ida.items():
-        v_aussen = (personen * qp) + (flaeche * qb)
-        ergebnisse[kat] = v_aussen
-        st.write(f"{kat}: {v_aussen:.1f} m³/h")
-    st.session_state.ida3_volumen = ergebnisse.get("IDA 3 (Mäßige Luftqualität)", 450)
+    for kat, desc, qp, qb in ida_data:
+        V_aussen = (personen * qp) + (flaeche * qb)
+        ergebnisse[kat] = V_aussen
+        st.write(f"**{kat} ({desc}):** {V_aussen:.1f} m³/h  (Rechnung: {personen}·{qp} + {flaeche:.1f}·{qb})")
+
+    # Standardwert für andere Tabs (IDA 3)
+    st.session_state.ida3_volumen = ergebnisse["IDA 3"]
 
 # ================== TAB 6: Druckverlustrechner ==================
 with tab6:
@@ -236,6 +253,10 @@ with tab6:
 # ================== TAB 7: Kanal-Dimensionierung ==================
 with tab7:
     st.header("Kanal-Dimensionierung (Kontinuitätsgleichung)")
+    st.markdown("**Formel:**")
+    st.latex(r"V = v \cdot A \cdot 3600 \quad \Rightarrow \quad A = \frac{V}{v \cdot 3600}")
+    st.caption("V in m³/h, v in m/s, A in m²")
+
     if 'ida3_volumen' in st.session_state:
         V_kan = st.number_input("Volumenstrom [m³/h]", value=st.session_state.ida3_volumen)
     else:
@@ -307,7 +328,7 @@ with tab9:
     with col1:
         V_ue = st.number_input("Volumenstrom [m³/h]", value=100, key="ue_v")
     with col2:
-        rho = 1.2  # Luftdichte definiert, damit kein NameError auftritt
+        rho = 1.2
         st.write(f"Luftdichte ρ = {rho} kg/m³")
 
     st.subheader("Zulässige Druckdifferenz Δp (nach DIN 1946-6)")
@@ -323,11 +344,9 @@ with tab9:
     alpha_gitter = 0.72
     st.write(f"α Türspalt = {alpha_tuer},  α Gitter = {alpha_gitter}")
 
-    # Berechnung der freien Flächen (jetzt mit dp und rho sicher definiert)
     A_tuer = (V_ue/3600) / (alpha_tuer * np.sqrt(2*dp/rho))
     A_gitter = (V_ue/3600) / (alpha_gitter * np.sqrt(2*dp/rho))
 
-    # Resultierende Geschwindigkeiten
     v_tuer = (V_ue/3600) / A_tuer if A_tuer > 0 else 0
     v_gitter = (V_ue/3600) / A_gitter if A_gitter > 0 else 0
 
@@ -349,27 +368,22 @@ with tab9:
         else:
             st.warning(f"⚠️ {v_gitter:.2f} m/s > 1,0 m/s – kann hörbar sein!")
 
-    st.markdown("---")
     st.info(
         "**Maximal empfohlene Strömungsgeschwindigkeiten:**\n"
         "- **Türspalt**: ≤ **1,5 m/s** – höhere Geschwindigkeiten können Pfeifgeräusche verursachen.\n"
-        "- **Überströmgitter**: ≤ **1,0 m/s** – für einen akustisch neutralen Betrieb (ca. 1 Pa Druckabfall).\n"
-        "- Diese Grenzwerte stellen den Komfort sicher und sind unabhängig von der Norm."
+        "- **Überströmgitter**: ≤ **1,0 m/s** – für einen akustisch neutralen Betrieb (ca. 1 Pa Druckabfall)."
     )
 
-    # ----- Interaktive Dimensionierung (Breite × Höhe) -----
     st.subheader("🔧 Überströmungsgitter dimensionieren")
-    st.markdown("Geben Sie eine gewünschte Gitterabmessung vor – die andere wird automatisch berechnet.")
     dim_modus = st.radio("Vorgabe wählen:", ("Breite vorgeben", "Höhe vorgeben"), index=0)
-    eps_gitter = st.number_input("Freier Querschnitt des Gitters (Herstellerangabe)", value=0.65, key="eps_gitter_dim")
-    A_req_cm2 = A_gitter * 10000  # erforderliche freie Fläche in cm²
+    eps_gitter = st.number_input("Freier Querschnitt des Gitters (Hersteller)", value=0.65, key="eps_gitter_dim")
+    A_req_cm2 = A_gitter * 10000
 
     if dim_modus == "Breite vorgeben":
         b_vor = st.number_input("Gewünschte Breite [mm]", value=400, step=10, key="b_vor")
         if b_vor > 0 and eps_gitter > 0:
-            # Geometrische Fläche = A_req / eps_gitter, dann Höhe = geometr. Fläche / Breite (in cm)
             geom_flaeche_cm2 = A_req_cm2 / eps_gitter
-            hoehe_cm = geom_flaeche_cm2 / (b_vor/10)  # Breite in cm
+            hoehe_cm = geom_flaeche_cm2 / (b_vor/10)
             hoehe_mm = hoehe_cm * 10
             st.write(f"**Ergebnis:** Breite = {b_vor} mm → benötigte Höhe = **{hoehe_mm:.0f} mm**")
             st.caption(f"Geometrische Fläche = {geom_flaeche_cm2:.1f} cm² (davon {eps_gitter*100:.0f}% frei = {A_req_cm2:.1f} cm²)")
@@ -392,8 +406,12 @@ with tab9:
 # ================== TAB 10: Akustik ==================
 with tab10:
     st.header("Akustischer Abstandsrechner für Außenluftgitter")
+    st.markdown("**Formel (halbe Kugelabstrahlung):**")
+    st.latex(r"L_p = L_{wA} - 20 \cdot \log_{10}(r) - 8")
+    st.caption("L_p = Schalldruckpegel am Immissionsort [dB(A)], L_wA = Schallleistungspegel [dB(A)], r = Abstand [m]")
+
     L_wA = st.number_input("Schallleistungspegel Gitter [dB(A)]", value=56)
     r = st.number_input("Abstand zum nächsten Nachbarn [m]", value=15)
     L_p = L_wA - 20 * np.log10(r) - 8
     st.write(f"Schalldruckpegel beim Nachbarn: **{L_p:.1f} dB(A)**")
-    st.caption("Näherung für halbkugelförmige Abstrahlung im Freien.")
+    st.caption("Vereinfachte Näherung für Freifeldbedingungen (Q=2).")
